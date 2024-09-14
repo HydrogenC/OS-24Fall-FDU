@@ -3,12 +3,20 @@
 #include <common/spinlock.h>
 #include <driver/memlayout.h>
 #include <kernel/mem.h>
-// #include <kernel/printk.h>
+#include <kernel/printk.h>
+
+// Reference: https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
+#define ALIGN_PTR(addr, size) ((usize)addr + (size - 1)) & (-size);
 
 RefCount kalloc_page_cnt;
 
+extern char end[];
+static char *heap_base;
+
 void kinit() {
     init_rc(&kalloc_page_cnt);
+    heap_base = ALIGN_PTR(end, PAGE_SIZE);
+    printk("Start addr: %llu\n", (usize)heap_base);
 }
 
 void* kalloc_page() {
@@ -19,7 +27,6 @@ void* kalloc_page() {
 
 void kfree_page(void* p) {
     decrement_rc(&kalloc_page_cnt);
-
     return;
 }
 
