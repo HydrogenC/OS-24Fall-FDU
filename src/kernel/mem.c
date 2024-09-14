@@ -12,6 +12,7 @@
 #define MIN_SIZE 8
 
 RefCount kalloc_page_cnt;
+static SpinLock page_lock, block_lock;
 
 extern char end[];
 static char *heap_base;
@@ -22,7 +23,10 @@ const int block_sizes[] = { 8, 16, 32, 64, 128, 256, 512, 1024 };
 typedef struct __page_header {
     struct __page_header *next, *prev;
     short filled_blocks;
+    u16 id;
+    short tier;
     char *free_block;
+    bool allocated;
 } page_header;
 
 // List of unallocated pages
@@ -30,9 +34,8 @@ static page_header *free_list = NULL;
 // List of pages that are already allocated, but still have empty blocks
 static page_header *partial_list[8] = { NULL };
 
-void kinit()
+void init_pages()
 {
-    init_rc(&kalloc_page_cnt);
     heap_base = ALIGN_UP_PTR(end, PAGE_SIZE);
 
     // Stop addr in kernel space
@@ -44,6 +47,8 @@ void kinit()
         if (free_list) {
             free_list->prev = p_header;
         }
+        p_header->id = counter;
+        p_header->allocated = false;
         p_header->next = free_list;
         free_list = p_header;
         counter++;
@@ -51,10 +56,21 @@ void kinit()
 
     printk("Page start addr: %llu, registered pages: %d\n", (usize)heap_base,
            counter);
+    printk("Size of header: %llu\n", sizeof(page_header));
+}
+
+void kinit()
+{
+    init_rc(&kalloc_page_cnt);
+    init_spinlock(&page_lock);
+    init_spinlock(&block_lock);
+
+    init_pages();
 }
 
 void *kalloc_page()
 {
+    acquire_spinlock(&page_lock);
     page_header *p_page = free_list;
     if (!p_page) {
         return NULL;
@@ -64,59 +80,118 @@ void *kalloc_page()
     if (free_list) {
         free_list->prev = NULL;
     }
+    p_page->next = NULL;
+
     increment_rc(&kalloc_page_cnt);
+    //printk("Allocated page, page cnt: %d\n", kalloc_page_cnt.count);
+    release_spinlock(&page_lock);
+
     return p_page;
 }
 
 void kfree_page(void *p)
 {
     // Insert into free list
+    acquire_spinlock(&page_lock);
     page_header *p_page = p;
     if (free_list) {
         free_list->prev = p_page;
     }
+
+    p_page->allocated = false;
+    p_page->filled_blocks = 0;
     p_page->next = free_list;
     free_list = p_page;
 
     decrement_rc(&kalloc_page_cnt);
+    //printk("Freed page, page cnt: %d\n", kalloc_page_cnt.count);
+    release_spinlock(&page_lock);
+
     return;
+}
+
+// Get full pages out of partial_list
+void remove_from_list(page_header *p_page)
+{
+    if (p_page->prev) {
+        p_page->prev->next = p_page->next;
+    } else {
+        partial_list[p_page->tier] = p_page->next;
+    }
+
+    if (p_page->next) {
+        p_page->next->prev = p_page->prev;
+    }
+}
+
+// Get full pages out of partial_list
+void add_to_list(page_header *p_page)
+{
+    int tier = p_page->tier;
+    if (partial_list[tier]) {
+        partial_list[tier]->prev = p_page;
+    }
+
+    p_page->next = partial_list[tier];
+    partial_list[tier] = p_page;
+}
+
+void walk_free_list()
+{
+    __walk_list(free_list);
+}
+
+// Debug code, to check if the linked list works properly
+void __walk_list(page_header *lk)
+{
+    page_header *pg = lk, *prev_pg;
+    int cnt = 0;
+    while (pg != NULL) {
+        prev_pg = pg;
+        pg = pg->next;
+        cnt++;
+    }
+
+    printk("Forward walk, found %d pages!\n", cnt);
+    cnt = 1;
+
+    pg = prev_pg;
+    while (pg != lk) {
+        pg = pg->prev;
+        cnt++;
+    }
+
+    printk("Backward walk, found %d pages!\n", cnt);
 }
 
 // Initialize a page to become a container of blocks of a certain size
 void setup_page(page_header *p_page, int tier)
 {
-    // Insert page into the partial list of the block size
-    if (partial_list[tier]) {
-        partial_list[tier]->prev = p_page;
+    if (p_page->allocated) {
+        printk("Panic: page %d re-allcated!\n", p_page->id);
+        walk_free_list();
     }
-    p_page->next = partial_list[tier];
-    partial_list[tier] = p_page;
 
+    p_page->tier = tier;
     p_page->free_block = NULL;
     p_page->filled_blocks = 0;
+    p_page->allocated = true;
+
+    // Insert page into the partial list of the block size
+    add_to_list(p_page);
+    printk("Page %d allocated with block size %d\n", p_page->id,
+           block_sizes[tier]);
 
     const u64 block_size = block_sizes[tier];
     char *payload_start = ((char *)p_page) + sizeof(page_header);
+    // Align by 8
     payload_start = ALIGN_UP_PTR(payload_start, 8);
 
-    for (char *i = payload_start; i + block_size < p_page + PAGE_SIZE;
+    const char *upper_bound = (char *)p_page + PAGE_SIZE;
+    for (char *i = payload_start; i + block_size < upper_bound;
          i += block_size) {
         *((char **)i) = p_page->free_block;
         p_page->free_block = i;
-    }
-}
-
-// Get full pages out of partial_list
-void mark_as_full(page_header *p_page, int tier)
-{
-    if (p_page->prev) {
-        p_page->prev->next = p_page->next;
-    } else {
-        partial_list[tier] = p_page->next;
-    }
-
-    if (p_page->next) {
-        p_page->next->prev = p_page->prev;
     }
 }
 
@@ -134,7 +209,13 @@ int get_tier(unsigned long long size)
 
 void *kalloc(unsigned long long size)
 {
+    if (size == 0) {
+        // Cannot allocate zero size
+        return NULL;
+    }
+
     int tier = get_tier(size);
+    acquire_spinlock(&block_lock);
 
     page_header *p_page = partial_list[tier];
     // No empty list
@@ -151,24 +232,35 @@ void *kalloc(unsigned long long size)
     p_page->free_block = *((char **)(p_page->free_block));
 
     p_page->filled_blocks++;
+    printk("Trying to allocate %llu bytes in page %d, block size %d, %d blcks filled\n",
+           size, p_page->id, block_sizes[tier], p_page->filled_blocks);
     if (!p_page->free_block) {
-        mark_as_full(p_page, tier);
+        remove_from_list(p_page);
     }
 
+    release_spinlock(&block_lock);
     return addr;
 }
 
 void kfree(void *ptr)
 {
+    acquire_spinlock(&block_lock);
     page_header *p_page = ALIGN_DOWN_PTR(ptr, PAGE_SIZE);
+
+    // The page has empty space again, add back to list
+    if (!p_page->free_block) {
+        add_to_list(p_page);
+    }
 
     *((char **)ptr) = p_page->free_block;
     p_page->free_block = ptr;
     p_page->filled_blocks--;
 
     if (p_page->filled_blocks <= 0) {
+        p_page->allocated = false;
         kfree_page(p_page);
     }
 
+    release_spinlock(&block_lock);
     return;
 }
