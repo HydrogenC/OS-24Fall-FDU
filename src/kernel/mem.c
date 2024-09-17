@@ -32,7 +32,7 @@ typedef struct __page_header {
 // List of unallocated pages
 static page_header *free_list = NULL;
 // List of pages that are already allocated, but still have empty blocks
-static page_header *partial_list[8] = { NULL };
+static page_header *partial_list[9] = { NULL };
 
 void init_pages()
 {
