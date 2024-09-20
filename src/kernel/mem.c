@@ -54,9 +54,9 @@ void init_pages()
         counter++;
     }
 
-    printk("Page start addr: %llu, registered pages: %d\n", (usize)heap_base,
-           counter);
-    printk("Size of header: %llu\n", sizeof(page_header));
+    // printk("Page start addr: %llu, registered pages: %d\n", (usize)heap_base,
+    //        counter);
+    // printk("Size of header: %llu\n", sizeof(page_header));
 }
 
 void kinit()
