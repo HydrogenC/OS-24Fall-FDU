@@ -31,7 +31,7 @@ ListNode *_detach_from_list(ListNode *node);
 #define _empty_list(list) ((list)->next == (list))
 
 // * List operations with locks
-#define merge_list(node1, node2) _merge_list(node1, node2)
+#define merge_list(node1, node2)       _merge_list(node1, node2)
 #define insert_into_list(list, node)   _insert_into_list(list, node)
 #define detach_from_list(node)         _detach_from_list(node)
 

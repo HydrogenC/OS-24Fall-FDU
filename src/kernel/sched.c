@@ -90,8 +90,7 @@ bool activate_proc(Proc *p)
 static void update_this_state(enum procstate new_state)
 {
     // TODO: if you use template sched function, you should implement this routinue
-    // update the state of current process to new_state, and not [remove it from the sched queue if
-    // new_state=SLEEPING/ZOMBIE]
+    // update the state of current process to new_state, and modify the sched queue if necessary
     Proc *this = thisproc();
     this->state = new_state;
 }
