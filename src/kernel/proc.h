@@ -8,12 +8,15 @@
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, ZOMBIE };
 
-// Caller-saved registers here
+// Reference: https://github.com/rcore-os/trapframe-rs/blob/master/src/arch/aarch64/mod.rs
 typedef struct UserContext {
-    // General purpose, x2 ~ x18
-    u64 x[18];
-    // `另外，为了防止我们不小心把 ELR_EL1 和 SPSR_EL1 的值覆盖掉，我们也需要保存这两个寄存器的值`
-    u64 elr, spsr;
+    // Reserved for user mode traps, not used now
+    u64 tpidr, sp;
+    // Special registers
+    u64 spsr, elr;
+    // General purpose registers, x1 ~ x30
+    // x0 is trap type, no need to save
+    u64 x[30];
 } UserContext;
 
 // Save callee-saved registers here

@@ -8,7 +8,9 @@
 .globl swtch
 swtch:
 // TODO: save and restore KernelContext
-pushp(x0, x1)
+
+// Reserve space for x0, x1
+add sp, sp, #-16
 pushp(x29, lr)
 pushp(x27, x28)
 pushp(x25, x26)
