@@ -31,27 +31,9 @@ ListNode *_detach_from_list(ListNode *node);
 #define _empty_list(list) ((list)->next == (list))
 
 // * List operations with locks
-#define merge_list(lock, node1, node2)             \
-    ({                                             \
-        _acquire_spinlock(lock);                   \
-        ListNode *__t = _merge_list(node1, node2); \
-        _release_spinlock(lock);                   \
-        __t;                                       \
-    })
-#define insert_into_list(lock, list, node)             \
-    ({                                                 \
-        _acquire_spinlock(lock);                       \
-        ListNode *__t = _insert_into_list(list, node); \
-        _release_spinlock(lock);                       \
-        __t;                                           \
-    })
-#define detach_from_list(lock, node)             \
-    ({                                           \
-        _acquire_spinlock(lock);                 \
-        ListNode *__t = _detach_from_list(node); \
-        _release_spinlock(lock);                 \
-        __t;                                     \
-    })
+#define merge_list(node1, node2) _merge_list(node1, node2)
+#define insert_into_list(list, node)   _insert_into_list(list, node)
+#define detach_from_list(node)         _detach_from_list(node)
 
 // Lockfree Queue: implemented as a lock-free single linked list.
 typedef struct QueueNode {
