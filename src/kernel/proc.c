@@ -125,7 +125,6 @@ int wait(int *exitcode)
     // NOTE: be careful of concurrency
 
     Proc* this = thisproc();
-    acquire_sched_lock();
 
     ListNode* child = &this->children;
     // No children

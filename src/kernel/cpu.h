@@ -5,10 +5,12 @@
 
 #define NCPU 4
 
+struct KernelContext;
+
 struct sched {
     // TODO: customize your sched info
-    struct Proc* thisProc;
-    struct Proc* idleProc;
+    struct Proc* this_proc;
+    struct Proc* idle_proc;
 };
 
 struct cpu {

@@ -124,6 +124,7 @@ static void proc_test_1()
     for (int i = 0; i < 10; i++) {
         auto p = create_proc();
         set_parent_to_this(p);
+        printk("proc_test line %d\n", __LINE__);
         pid[i] = start_proc(p, proc_test_1a, i);
     }
     for (int i = 0; i < 10; i++) {
@@ -144,6 +145,7 @@ void proc_test()
     while (1) {
         int code;
         int id = wait(&code);
+        printk("proc_test line %d\n", __LINE__);
         if (id == -1)
             break;
         if (id == pid)
