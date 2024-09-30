@@ -13,7 +13,7 @@ int pid = 0, pid_limit = 65536;
 
 static RefCount proc_count;
 
-// Lock for proc list
+// Lock for modification on the proc tree
 static SpinLock proc_lock;
 
 void kernel_entry();
@@ -112,7 +112,9 @@ int start_proc(Proc *p, void (*entry)(u64), u64 arg)
     p->kcontext->lr = &proc_entry;
 
     increment_rc(&proc_count);
+    acquire_sched_lock();
     activate_proc(p);
+    release_sched_lock();
     return p->pid;
 }
 
@@ -133,19 +135,36 @@ int wait(int *exitcode)
     }
 
     wait_sem(&this->childexit);
+    printk("Child lock unlocked for pid %d.\n", this->pid);
     
+    // Wait for scheduling to complete (so that the state is set to ZOMBIE)
+    acquire_sched_lock();
+
     // Move to first child (this->children is a placeholder)
     child = child->next;
     while (child != &this->children)
     {
-        Proc* proc = container_of(child, Proc, ptnode);
-        if(proc->state == ZOMBIE){
-            *exitcode = proc->exitcode;
-            return proc->pid;
+        Proc* child_proc = container_of(child, Proc, ptnode);
+        if(child_proc->state == ZOMBIE){
+            printk("Child of Proc{pid=%d} with pid %d exited. \n", this->pid, child_proc->pid);
+            *exitcode = child_proc->exitcode;
+            int child_pid = child_proc->pid;
+
+            // Recycle child
+            acquire_spinlock(&proc_lock);
+            detach_from_list(&child_proc->ptnode);
+            release_spinlock(&proc_lock);
+            // kfree(child_proc);
+
+            release_sched_lock();
+            return child_pid;
         }
 
         child = child->next;
     }
+
+    printk("WARNING: No zombie child found for pid %d, must be something wrong.\n", this->pid);
+    release_sched_lock();
 }
 
 NO_RETURN void exit(int code)
@@ -158,23 +177,27 @@ NO_RETURN void exit(int code)
     // NOTE: be careful of concurrency
 
     Proc* this = thisproc();
-    acquire_spinlock(&proc_lock);
 
+    printk("Proc{pid=%d} quitting with code %d.\n", this->pid, code);
+    decrement_rc(&proc_count);
+
+    acquire_sched_lock();
     this->exitcode = code;
     // Notify listeners of child exit
     post_sem(&(this->parent->childexit));
-    decrement_rc(&proc_count);
 
     ListNode* child = &this->children;
-
     // Transfer children to root_proc if there's any
     if(child->next != child){
         child = child->next;
         while (child != &this->children)
         {
-            Proc* proc = container_of(child, Proc, ptnode);
-            proc->parent = &root_proc;
-            insert_into_list(&root_proc.children, &proc->ptnode);
+            Proc* child_proc = container_of(child, Proc, ptnode);
+
+            acquire_spinlock(&proc_lock);
+            child_proc->parent = &root_proc;
+            insert_into_list(&root_proc.children, &child_proc->ptnode);
+            release_spinlock(&proc_lock);
 
             child = child->next;
         }

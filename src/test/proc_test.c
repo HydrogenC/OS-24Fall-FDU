@@ -18,6 +18,7 @@ static Semaphore s1, s2, s3, s4, s5, s6;
 
 static void proc_test_1b(u64 a)
 {
+    printk("Proc test 1b, a=%llu\n", a);
     switch (a / 10 - 1) {
     case 0:
         break;

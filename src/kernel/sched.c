@@ -93,23 +93,19 @@ bool activate_proc(Proc *p)
     // else: panic
 
     printk("Activating Proc{pid=%d, state=%d}\n", p->pid, p->state);
-    acquire_sched_lock();
     switch (p->state) {
     case RUNNING:
     case RUNNABLE:
-        release_sched_lock();
         return false;
     case SLEEPING:
     case UNUSED:
         p->state = RUNNABLE;
         runnable_queue =
                 insert_into_list(runnable_queue, &p->schinfo.queue_node);
-        release_sched_lock();
         return true;
     }
 
     PANIC();
-    release_sched_lock();
     return false;
 }
 
@@ -189,13 +185,12 @@ void sched(enum procstate new_state)
     ASSERT(next->state == RUNNABLE);
     next->state = RUNNING;
 
-    if (next->pid != 0 || this->pid != 0) {
+    if (this->pid != 0 || next->pid != 0) {
         printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next\n",
                cpuid(), this->pid, new_state, next->pid, next->state);
     }
     if (next != this) {
         swtch(next->kcontext, &this->kcontext);
-        // printk("Return addr: %llu\n", (u64)this->kcontext->lr);
     }
 
     release_sched_lock();
