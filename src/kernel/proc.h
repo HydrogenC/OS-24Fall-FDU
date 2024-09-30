@@ -31,11 +31,6 @@ typedef struct KernelContext {
     u64 x1;
 } KernelContext;
 
-typedef struct __cpu_state{
-    struct Proc* thisProc;
-    struct Proc* idleProc;
-} CpuState;
-
 // embeded data for procs
 struct schinfo {
     // Node for round-robin scheduling
