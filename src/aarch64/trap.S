@@ -29,7 +29,7 @@ mrs x1, spsr_el1
 mrs x2, elr_el1
 pushp(x1, x2)
 // Reserve space for `sp` and `tpidr`
-add sp, sp, #-16
+add sp, sp, #-0x10
 
 // Pass `sp` as the first param for trap handler
 mov x0, sp
@@ -40,7 +40,7 @@ trap_return:
 // TODO: restore UserContext
 
 // Reserve space for `sp` and `tpidr`
-add sp, sp, #16
+add sp, sp, #0x10
 // Pop system registers
 popp(x1, x2)
 msr spsr_el1, x1

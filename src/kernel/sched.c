@@ -6,8 +6,10 @@
 #include <kernel/cpu.h>
 #include <common/rbtree.h>
 #include <common/sem.h>
+#include <common/rc.h>
 
 extern bool panic_flag;
+extern RefCount proc_count;
 
 extern void swtch(KernelContext *new_ctx, KernelContext **old_ctx);
 
@@ -92,7 +94,8 @@ bool activate_proc(Proc *p)
     // if the proc->state if SLEEPING/UNUSED, set the process state to RUNNABLE and add it to the sched queue
     // else: panic
 
-    printk("Activating Proc{pid=%d, state=%d}\n", p->pid, p->state);
+    // printk("Activating Proc{pid=%d, state=%d}, count=%d\n", p->pid, p->state, proc_count.count);
+
     switch (p->state) {
     case RUNNING:
     case RUNNABLE:
@@ -119,6 +122,13 @@ static void update_this_state(enum procstate new_state)
     enum procstate prev_state = this->state;
     this->state = new_state;
 
+    /*
+    if (this->pid != 0) {
+        printk("State of Proc{pid=%d} updated from %d to %d\n", this->pid,
+               prev_state, new_state);
+    }
+    */
+
     // Idle process doesn't need to go into the queue
     if (this->idle) {
         return;
@@ -131,7 +141,7 @@ static void update_this_state(enum procstate new_state)
     } else if ((prev_state == RUNNING || prev_state == RUNNABLE) &&
                (this->state != RUNNABLE && this->state != RUNNING)) {
         // Transfer list head to next
-        if(runnable_queue == &this->schinfo.queue_node){
+        if (runnable_queue == &this->schinfo.queue_node) {
             runnable_queue = this->schinfo.queue_node.next;
         }
         detach_from_list(&this->schinfo.queue_node);
@@ -185,10 +195,12 @@ void sched(enum procstate new_state)
     ASSERT(next->state == RUNNABLE);
     next->state = RUNNING;
 
+    /*
     if (this->pid != 0 || next->pid != 0) {
         printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next\n",
                cpuid(), this->pid, new_state, next->pid, next->state);
     }
+    */
     if (next != this) {
         swtch(next->kcontext, &this->kcontext);
     }
