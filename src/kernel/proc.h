@@ -6,6 +6,8 @@
 #include <common/rbtree.h>
 #include <kernel/cpu.h>
 
+#define LINE_PROBE printk("CPU %d: File %s, Line %d\n", cpuid(), __FILE__, __LINE__)
+
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, ZOMBIE };
 
 // Reference: https://github.com/rcore-os/trapframe-rs/blob/master/src/arch/aarch64/mod.rs
@@ -14,8 +16,9 @@ typedef struct UserContext {
     u64 tpidr, sp;
     // Special registers
     u64 spsr, elr;
-    // General purpose registers, x1 ~ x30
-    // x0 is trap type, no need to save
+    // x30, reserve 8 bytes for alignment
+    u64 lr, __reserved;
+    // General purpose registers, x0 ~ x29
     u64 x[30];
 } UserContext;
 

@@ -94,21 +94,26 @@ bool activate_proc(Proc *p)
     // if the proc->state if SLEEPING/UNUSED, set the process state to RUNNABLE and add it to the sched queue
     // else: panic
 
-    // printk("Activating Proc{pid=%d, state=%d}, count=%d\n", p->pid, p->state, proc_count.count);
+    // printk("CPU %d: Activating Proc{pid=%d, state=%d}, count=%d\n", cpuid(), p->pid, p->state, proc_count.count);
 
+    acquire_sched_lock();
+    LINE_PROBE;
     switch (p->state) {
     case RUNNING:
     case RUNNABLE:
+        release_sched_lock();
         return false;
     case SLEEPING:
     case UNUSED:
         p->state = RUNNABLE;
         runnable_queue =
                 insert_into_list(runnable_queue, &p->schinfo.queue_node);
+        release_sched_lock();
         return true;
     }
 
     PANIC();
+    release_sched_lock();
     return false;
 }
 
@@ -190,17 +195,17 @@ void sched(enum procstate new_state)
     auto this = thisproc();
     ASSERT(this->state == RUNNING);
     update_this_state(new_state);
+
     auto next = pick_next();
     update_this_proc(next);
     ASSERT(next->state == RUNNABLE);
     next->state = RUNNING;
 
-    /*
-    if (this->pid != 0 || next->pid != 0) {
+    if ((this->pid != 0 || next->pid != 0) && this->pid != next->pid ) {
         printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next\n",
                cpuid(), this->pid, new_state, next->pid, next->state);
     }
-    */
+    
     if (next != this) {
         swtch(next->kcontext, &this->kcontext);
     }

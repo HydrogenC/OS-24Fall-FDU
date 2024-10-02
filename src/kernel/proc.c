@@ -130,9 +130,7 @@ int start_proc(Proc *p, void (*entry)(u64), u64 arg)
     p->kcontext->lr = &proc_entry;
 
     increment_rc(&proc_count);
-    acquire_sched_lock();
     activate_proc(p);
-    release_sched_lock();
     return p->pid;
 }
 
@@ -166,16 +164,13 @@ int wait(int *exitcode)
     // printk("Proc{pid=%d} waiting for children: \n", this->pid);
     wait_sem(&this->childexit);
     // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
-    
-    // Wait for scheduling to complete (so that the state is set to ZOMBIE)
-    acquire_sched_lock();
 
     // Move to first child (this->children is a placeholder)
     child = child->next;
     while (child != &this->children)
     {
         Proc* child_proc = container_of(child, Proc, ptnode);
-        if(child_proc->state == ZOMBIE){
+        if(is_zombie(child_proc)){
             *exitcode = child_proc->exitcode;
             int child_pid = child_proc->pid;
 
@@ -193,7 +188,6 @@ int wait(int *exitcode)
     }
 
     printk("WARNING: No zombie child found for pid %d, must be something wrong.\n", this->pid);
-    release_sched_lock();
     return -1;
 }
 
@@ -208,13 +202,12 @@ NO_RETURN void exit(int code)
 
     Proc* this = thisproc();
     decrement_rc(&proc_count);
-
-    acquire_sched_lock();
+    
     this->exitcode = code;
     // Notify listeners of child exit
     // printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
-
+    
     ListNode* start_node = &this->children;
     // Transfer children to root_proc if there's any
     
@@ -232,7 +225,7 @@ NO_RETURN void exit(int code)
             insert_into_list(&root_proc.children, &child_proc->ptnode);
 
             // Notify root_proc to clean up if child is zombie
-            if(child_proc->state == ZOMBIE){
+            if(is_zombie(child_proc)){
                 post_sem(&root_proc.childexit);
             }
         }
@@ -240,5 +233,6 @@ NO_RETURN void exit(int code)
     }
 
     // printk("Proc{pid=%d} quitting with code %d.\n", this->pid, code);
+    acquire_sched_lock();
     sched(ZOMBIE);
 }
