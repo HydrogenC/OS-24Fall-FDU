@@ -165,6 +165,7 @@ int wait(int *exitcode)
     wait_sem(&this->childexit);
     // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
 
+    acquire_spinlock(&proc_lock);
     // Move to first child (this->children is a placeholder)
     child = child->next;
     while (child != &this->children)
@@ -175,18 +176,16 @@ int wait(int *exitcode)
             int child_pid = child_proc->pid;
 
             // Recycle child
-            acquire_spinlock(&proc_lock);
             detach_from_list(&child_proc->ptnode);
-            release_spinlock(&proc_lock);
-            
             recycle_proc(child_proc);
-            release_sched_lock();
+            release_spinlock(&proc_lock);
             return child_pid;
         }
 
         child = child->next;
     }
 
+    release_spinlock(&proc_lock);
     printk("WARNING: No zombie child found for pid %d, must be something wrong.\n", this->pid);
     return -1;
 }
@@ -204,17 +203,17 @@ NO_RETURN void exit(int code)
     decrement_rc(&proc_count);
     
     this->exitcode = code;
+    acquire_spinlock(&proc_lock);
+
     // Notify listeners of child exit
     // printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
     
     ListNode* start_node = &this->children;
     // Transfer children to root_proc if there's any
-    
     if(start_node->next != start_node){
         ListNode* child = start_node->next;
 
-        acquire_spinlock(&proc_lock);
         while (child != start_node)
         {
             Proc* child_proc = container_of(child, Proc, ptnode);
@@ -229,10 +228,10 @@ NO_RETURN void exit(int code)
                 post_sem(&root_proc.childexit);
             }
         }
-        release_spinlock(&proc_lock);
     }
 
     // printk("Proc{pid=%d} quitting with code %d.\n", this->pid, code);
     acquire_sched_lock();
+    release_spinlock(&proc_lock);
     sched(ZOMBIE);
 }

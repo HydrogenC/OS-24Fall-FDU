@@ -80,7 +80,7 @@ void __walk_runnable_list()
     ListNode *current = runnable_queue;
     do {
         Proc *current_proc = container_of(current, Proc, schinfo.queue_node);
-        printk("Proc{pid=%d}->", current_proc->pid);
+        printk("Proc{pid=%d, state=%d}->", current_proc->pid, current_proc->state);
         current = current->next;
     } while (current != runnable_queue);
 
@@ -95,9 +95,8 @@ bool activate_proc(Proc *p)
     // else: panic
 
     // printk("CPU %d: Activating Proc{pid=%d, state=%d}, count=%d\n", cpuid(), p->pid, p->state, proc_count.count);
-
     acquire_sched_lock();
-    LINE_PROBE;
+
     switch (p->state) {
     case RUNNING:
     case RUNNABLE:
@@ -160,6 +159,7 @@ static Proc *pick_next()
 
     // If panicked or no task to run, then return to idle state
     if (panic_flag || runnable_queue == NULL) {
+        // printk("CPU %d: If panicked or no task to run, then return to idle state\n", cpuid());
         return cpus[cpuid()].sched.idle_proc;
     }
 
@@ -177,6 +177,7 @@ static Proc *pick_next()
     } while (rr_node != runnable_queue);
 
     // Default to idle
+    // printk("CPU %d: No runnable proc found, falling back to idle\n", cpuid());
     return cpus[cpuid()].sched.idle_proc;
 }
 
@@ -200,11 +201,12 @@ void sched(enum procstate new_state)
     update_this_proc(next);
     ASSERT(next->state == RUNNABLE);
     next->state = RUNNING;
-
+    
     if ((this->pid != 0 || next->pid != 0) && this->pid != next->pid ) {
-        printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next\n",
-               cpuid(), this->pid, new_state, next->pid, next->state);
+        printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next, count = %d\n",
+               cpuid(), this->pid, new_state, next->pid, next->state, proc_count.count);
     }
+    
     
     if (next != this) {
         swtch(next->kcontext, &this->kcontext);
