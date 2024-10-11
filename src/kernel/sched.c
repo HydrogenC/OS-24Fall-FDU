@@ -69,22 +69,14 @@ bool is_zombie(Proc *p)
     return r;
 }
 
-// Walk the runnable list and output, for debug purpose
-void __walk_runnable_list()
+
+bool is_unused(Proc *p)
 {
-    if (runnable_queue == NULL) {
-        printk("Empty list! \n");
-        return;
-    }
-
-    ListNode *current = runnable_queue;
-    do {
-        Proc *current_proc = container_of(current, Proc, schinfo.queue_node);
-        printk("Proc{pid=%d, state=%d}->", current_proc->pid, current_proc->state);
-        current = current->next;
-    } while (current != runnable_queue);
-
-    printk("\n");
+    bool r;
+    acquire_sched_lock();
+    r = p->state == UNUSED;
+    release_sched_lock();
+    return r;
 }
 
 bool activate_proc(Proc *p)
@@ -210,6 +202,7 @@ void sched(enum procstate new_state)
     */
     
     if (next != this) {
+        attach_pgdir(&next->pgdir);
         swtch(next->kcontext, &this->kcontext);
     }
 

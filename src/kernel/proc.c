@@ -235,3 +235,10 @@ NO_RETURN void exit(int code)
     release_spinlock(&proc_lock);
     sched(ZOMBIE);
 }
+
+int kill(int pid)
+{
+    // TODO:
+    // Set the killed flag of the proc to true and return 0.
+    // Return -1 if the pid is invalid (proc not found).
+}
