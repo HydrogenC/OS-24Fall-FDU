@@ -200,6 +200,13 @@ void sched(enum procstate new_state)
         printk("CPU %d: Taking on proc with pid %d as next. \n",
                cpuid(), next->pid);
     }
+
+    // If process killed, then directly return and stuck the current CPU on this process 
+    // and wait for trap to call `exit`.
+    if(next->killed && new_state != ZOMBIE){
+        release_sched_lock();
+        return;
+    }
     
     if (next != this) {
         attach_pgdir(&next->pgdir);

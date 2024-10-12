@@ -209,6 +209,8 @@ NO_RETURN void exit(int code)
     // Notify listeners of child exit
     // printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
+    // Free pgdir
+    free_pgdir(&this->pgdir);
     
     ListNode* start_node = &this->children;
     // Transfer children to root_proc if there's any
@@ -231,10 +233,38 @@ NO_RETURN void exit(int code)
         }
     }
 
-    // printk("Proc{pid=%d} quitting with code %d.\n", this->pid, code);
     acquire_sched_lock();
     release_spinlock(&proc_lock);
     sched(ZOMBIE);
+}
+
+Proc* find_proc(Proc* root, int pid){
+    if(root->pid==pid){
+        return root;
+    }
+
+    // No children
+    if(&root->children == root->children.next){
+        return NULL;
+    }
+
+    ListNode *current = root->children.next;
+    do {
+        Proc *current_proc = container_of(current, Proc, ptnode);
+
+        if(current_proc->pid == pid){
+            return current_proc;
+        }
+
+        Proc* child_search = find_proc(current_proc, pid);
+        if(child_search != NULL){
+            return child_search;
+        }
+
+        current = current->next;
+    } while (current != &root->children);
+    
+    return NULL;
 }
 
 int kill(int pid)
@@ -242,4 +272,18 @@ int kill(int pid)
     // TODO:
     // Set the killed flag of the proc to true and return 0.
     // Return -1 if the pid is invalid (proc not found).
+
+    acquire_spinlock(&proc_lock);
+    Proc* proc = find_proc(&root_proc, pid);
+
+    // Process not found
+    if(proc == NULL){
+        release_spinlock(&proc_lock);
+        return -1;
+    }
+
+    proc->killed = true;
+    activate_proc(proc);
+    release_spinlock(&proc_lock);
+    return 0;
 }
