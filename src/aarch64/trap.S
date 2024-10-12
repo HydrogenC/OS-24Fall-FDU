@@ -29,18 +29,20 @@ pushp(lr, x0)
 // Now use the general registers to transfer system registers
 mrs x1, spsr_el1
 mrs x2, elr_el1
+mrs x3, tpidr_el0
+mrs x4, sp_el0
 pushp(x1, x2)
-// Reserve space for `sp` and `tpidr`
-add sp, sp, #-0x10
+pushp(x3, x4)
 bl trap_global_handler
 
 .global trap_return
 trap_return:
 // TODO: restore UserContext
-// Reserve space for `sp` and `tpidr`
-add sp, sp, #0x10
 // Pop system registers
+popp(x3, x4)
 popp(x1, x2)
+msr tpidr_el0, x3
+msr sp_el0, x4
 msr spsr_el1, x1
 msr elr_el1, x2
 

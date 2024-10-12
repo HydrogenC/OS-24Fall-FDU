@@ -76,9 +76,12 @@ void user_proc_test()
         // 1. set x0 = i
         // 2. set elr = EXTMEM
         // 3. set spsr = 0
+        p->ucontext->x[0] = i;
+        p->ucontext->elr = EXTMEM;
+        p->ucontext->spsr = 0;
 
         pids[i] = start_proc(p, trap_return, 0);
-        printk("pid[%d] = %d\n", i, pids[i]);
+        printk("CPU %d: pid[%d] = %d\n", cpuid(), i, pids[i]);
     }
     ASSERT(wait_sem(&myrepot_done));
     printk("done\n");

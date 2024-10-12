@@ -58,6 +58,7 @@ void init_proc(Proc *p)
     init_list_node(&p->children);
     init_sem(&p->childexit, 0);
     init_schinfo(&p->schinfo);
+    init_pgdir(&p->pgdir);
 
     p->kstack = kalloc_page();
     p->kcontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext));

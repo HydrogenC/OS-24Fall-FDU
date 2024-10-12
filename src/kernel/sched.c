@@ -92,6 +92,7 @@ bool activate_proc(Proc *p)
     switch (p->state) {
     case RUNNING:
     case RUNNABLE:
+    case ZOMBIE:
         release_sched_lock();
         return false;
     case SLEEPING:
@@ -194,12 +195,11 @@ void sched(enum procstate new_state)
     ASSERT(next->state == RUNNABLE);
     next->state = RUNNING;
     
-    /*
-    if ((this->pid != 0 || next->pid != 0) && this->pid != next->pid ) {
-        printk("CPU %d: Current Proc{pid=%d}, new state=%d, picking Proc{pid=%d, state=%d} as next, count = %d\n",
-               cpuid(), this->pid, new_state, next->pid, next->state, proc_count.count);
+    
+    if (next->pid != 0) {
+        printk("CPU %d: Taking on proc with pid %d as next. \n",
+               cpuid(), next->pid);
     }
-    */
     
     if (next != this) {
         attach_pgdir(&next->pgdir);
