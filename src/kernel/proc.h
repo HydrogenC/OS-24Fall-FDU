@@ -36,7 +36,9 @@ typedef struct KernelContext {
 // embeded data for procs
 struct schinfo {
     // Node for round-robin scheduling
-    ListNode queue_node;
+    struct rb_node_ sched_node;
+    // The timestamp of the last time the proc was running
+    u64 timestamp;
 };
 
 typedef struct Proc {

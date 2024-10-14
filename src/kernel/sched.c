@@ -7,14 +7,16 @@
 #include <common/rbtree.h>
 #include <common/sem.h>
 #include <common/rc.h>
+#include "sched.h"
 
 extern bool panic_flag;
 extern RefCount proc_count;
 
 extern void swtch(KernelContext *new_ctx, KernelContext **old_ctx);
+extern bool __timer_cmp(rb_node lnode, rb_node rnode);
 
-// Pointer to cyclic round-robin queue
-static ListNode *runnable_queue = NULL;
+// RB tree of runnable processes
+static struct rb_root_ sched_tree = { NULL };
 static SpinLock sched_lock;
 
 struct KernelContext idle_kcontext[NCPU];
@@ -45,7 +47,8 @@ Proc *thisproc()
 void init_schinfo(struct schinfo *p)
 {
     // TODO: initialize your customized schinfo for every newly-created process
-    init_list_node(&p->queue_node);
+    p->sched_node.rb_right = p->sched_node.rb_left = NULL;
+    p->timestamp = 0;
 }
 
 void acquire_sched_lock()
@@ -68,7 +71,6 @@ bool is_zombie(Proc *p)
     release_sched_lock();
     return r;
 }
-
 
 bool is_unused(Proc *p)
 {
@@ -98,8 +100,7 @@ bool activate_proc(Proc *p)
     case SLEEPING:
     case UNUSED:
         p->state = RUNNABLE;
-        runnable_queue =
-                insert_into_list(runnable_queue, &p->schinfo.queue_node);
+        _rb_insert(&p->schinfo.sched_node, &sched_tree, __timer_cmp);
         release_sched_lock();
         return true;
     }
@@ -131,17 +132,10 @@ static void update_this_state(enum procstate new_state)
         return;
     }
 
-    if ((prev_state != RUNNING && prev_state != RUNNABLE) &&
-        (this->state == RUNNABLE || this->state == RUNNING)) {
-        runnable_queue =
-                insert_into_list(runnable_queue, &this->schinfo.queue_node);
-    } else if ((prev_state == RUNNING || prev_state == RUNNABLE) &&
-               (this->state != RUNNABLE && this->state != RUNNING)) {
-        // Transfer list head to next
-        if (runnable_queue == &this->schinfo.queue_node) {
-            runnable_queue = this->schinfo.queue_node.next;
-        }
-        detach_from_list(&this->schinfo.queue_node);
+    if (prev_state != RUNNABLE && this->state == RUNNABLE) {
+        _rb_insert(&this->schinfo.sched_node, &sched_tree, __timer_cmp);
+    } else if (prev_state == RUNNABLE && this->state != RUNNABLE) {
+        _rb_erase(&this->schinfo.sched_node, &sched_tree);
     }
 }
 
@@ -151,23 +145,15 @@ static Proc *pick_next()
     // choose the next process to run, and return idle if no runnable process
 
     // If panicked or no task to run, then return to idle state
-    if (panic_flag || runnable_queue == NULL) {
-        // printk("CPU %d: If panicked or no task to run, then return to idle state\n", cpuid());
+    if (panic_flag || sched_tree.rb_node == NULL) {
         return cpus[cpuid()].sched.idle_proc;
     }
 
-    // Round-robin
-    ListNode *rr_node = runnable_queue;
-    do {
-        Proc *current_proc = container_of(rr_node, Proc, schinfo.queue_node);
-        if (current_proc->state == RUNNABLE) {
-            // Start from next process next time
-            runnable_queue = rr_node->next;
-            return current_proc;
-        }
-
-        rr_node = rr_node->next;
-    } while (rr_node != runnable_queue);
+    // Get first process in tree
+    rb_node node = _rb_first(&sched_tree);
+    if (node != NULL) {
+        return container_of(node, Proc, schinfo.sched_node);
+    }
 
     // Default to idle
     // printk("CPU %d: No runnable proc found, falling back to idle\n", cpuid());
@@ -189,25 +175,28 @@ void sched(enum procstate new_state)
     auto this = thisproc();
     ASSERT(this->state == RUNNING);
     update_this_state(new_state);
+    this->schinfo.timestamp = get_timestamp();
 
     auto next = pick_next();
     update_this_proc(next);
     ASSERT(next->state == RUNNABLE);
+
+    // Set state as running as remove from schedule tree
     next->state = RUNNING;
-    
-    
-    if (next->pid != 0) {
-        printk("CPU %d: Taking on proc with pid %d as next. \n",
-               cpuid(), next->pid);
+    _rb_erase(&next->schinfo.sched_node, &sched_tree);
+
+    if (next->pid != 0 && next != this) {
+        printk("CPU %d: Taking on proc with pid %d as next, timestamp = %d. \n",
+               cpuid(), next->pid, next->schinfo.timestamp);
     }
 
-    // If process killed, then directly return and stuck the current CPU on this process 
+    // If process killed, then directly return and stuck the current CPU on this process
     // and wait for trap to call `exit`.
-    if(next->killed && new_state != ZOMBIE){
+    if (next->killed && new_state != ZOMBIE) {
         release_sched_lock();
         return;
     }
-    
+
     if (next != this) {
         attach_pgdir(&next->pgdir);
         swtch(next->kcontext, &this->kcontext);

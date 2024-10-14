@@ -35,7 +35,8 @@ void init_kproc()
     start_proc(&root_proc, kernel_entry, 123456);
 }
 
-int alloc_pid(){
+int alloc_pid()
+{
     int _pid = ++pid;
     return _pid;
 }
@@ -52,7 +53,7 @@ void init_proc(Proc *p)
 
     // Allocate pid
     p->pid = alloc_pid();
-    
+
     // Init members
     init_list_node(&p->ptnode);
     init_list_node(&p->children);
@@ -62,7 +63,8 @@ void init_proc(Proc *p)
 
     p->kstack = kalloc_page();
     p->kcontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext));
-    p->ucontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext) - sizeof(UserContext));
+    p->ucontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext) -
+                   sizeof(UserContext));
 
     release_spinlock(&proc_lock);
 }
@@ -75,7 +77,7 @@ Proc *create_proc()
 }
 
 // Walk the runnable list and output, for debug purpose
-void __walk_child_list(ListNode* children)
+void __walk_child_list(ListNode *children)
 {
     ListNode *current = children->next;
     if (current == children) {
@@ -85,7 +87,8 @@ void __walk_child_list(ListNode* children)
 
     do {
         Proc *current_proc = container_of(current, Proc, ptnode);
-        printk("Proc{pid=%d, state=%d}, ", current_proc->pid, current_proc->state);
+        printk("Proc{pid=%d, state=%d}, ", current_proc->pid,
+               current_proc->state);
         current = current->next;
     } while (current != children);
 
@@ -99,11 +102,11 @@ void set_parent_to_this(Proc *proc)
     // NOTE: it's ensured that the old proc->parent = NULL
 
     ASSERT(proc->parent == NULL);
-    Proc* this = thisproc();
+    Proc *this = thisproc();
 
     acquire_spinlock(&proc_lock);
     proc->parent = this;
-    insert_into_list(&this->children, &proc->ptnode);
+    _insert_into_list(&this->children, &proc->ptnode);
     release_spinlock(&proc_lock);
 }
 
@@ -116,10 +119,10 @@ int start_proc(Proc *p, void (*entry)(u64), u64 arg)
     // NOTE: be careful of concurrency
 
     // printk("Start proc called for Proc{pid=%d}\n", p->pid);
-    if(p->parent == NULL){
+    if (p->parent == NULL) {
         acquire_spinlock(&proc_lock);
         p->parent = &root_proc;
-        insert_into_list(&root_proc.children, &p->ptnode);
+        _insert_into_list(&root_proc.children, &p->ptnode);
         release_spinlock(&proc_lock);
     }
 
@@ -135,7 +138,8 @@ int start_proc(Proc *p, void (*entry)(u64), u64 arg)
     return p->pid;
 }
 
-void recycle_proc(Proc* proc){
+void recycle_proc(Proc *proc)
+{
     // Dealloc the page
     kfree_page(proc->kstack);
 
@@ -151,33 +155,32 @@ int wait(int *exitcode)
     // 3. if any child exits, clean it up and return its pid and exitcode
     // NOTE: be careful of concurrency
 
-    Proc* this = thisproc();
+    Proc *this = thisproc();
 
     acquire_spinlock(&proc_lock);
-    ListNode* child = &this->children;
+    ListNode *child = &this->children;
     // No children
-    if(child->next == child){
+    if (child->next == child) {
         release_spinlock(&proc_lock);
         return -1;
     }
     release_spinlock(&proc_lock);
 
-    // printk("Proc{pid=%d} waiting for children: \n", this->pid);
+    // printk("Proc{pid=%d} waiting for children. \n", this->pid);
     wait_sem(&this->childexit);
     // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
 
     acquire_spinlock(&proc_lock);
     // Move to first child (this->children is a placeholder)
     child = child->next;
-    while (child != &this->children)
-    {
-        Proc* child_proc = container_of(child, Proc, ptnode);
-        if(is_zombie(child_proc)){
+    while (child != &this->children) {
+        Proc *child_proc = container_of(child, Proc, ptnode);
+        if (is_zombie(child_proc)) {
             *exitcode = child_proc->exitcode;
             int child_pid = child_proc->pid;
 
             // Recycle child
-            detach_from_list(&child_proc->ptnode);
+            _detach_from_list(&child_proc->ptnode);
             recycle_proc(child_proc);
             release_spinlock(&proc_lock);
             return child_pid;
@@ -187,7 +190,8 @@ int wait(int *exitcode)
     }
 
     release_spinlock(&proc_lock);
-    printk("WARNING: No zombie child found for pid %d, must be something wrong.\n", this->pid);
+    printk("WARNING: No zombie child found for pid %d, must be something wrong.\n",
+           this->pid);
     return -1;
 }
 
@@ -200,9 +204,9 @@ NO_RETURN void exit(int code)
     // 4. sched(ZOMBIE)
     // NOTE: be careful of concurrency
 
-    Proc* this = thisproc();
+    Proc *this = thisproc();
     decrement_rc(&proc_count);
-    
+
     this->exitcode = code;
     acquire_spinlock(&proc_lock);
 
@@ -211,23 +215,22 @@ NO_RETURN void exit(int code)
     post_sem(&this->parent->childexit);
     // Free pgdir
     free_pgdir(&this->pgdir);
-    
-    ListNode* start_node = &this->children;
-    // Transfer children to root_proc if there's any
-    if(start_node->next != start_node){
-        ListNode* child = start_node->next;
 
-        while (child != start_node)
-        {
-            Proc* child_proc = container_of(child, Proc, ptnode);
+    ListNode *start_node = &this->children;
+    // Transfer children to root_proc if there's any
+    if (start_node->next != start_node) {
+        ListNode *child = start_node->next;
+
+        while (child != start_node) {
+            Proc *child_proc = container_of(child, Proc, ptnode);
             child = child->next;
 
-            detach_from_list(&child_proc->ptnode);
+            _detach_from_list(&child_proc->ptnode);
             child_proc->parent = &root_proc;
-            insert_into_list(&root_proc.children, &child_proc->ptnode);
+            _insert_into_list(&root_proc.children, &child_proc->ptnode);
 
             // Notify root_proc to clean up if child is zombie
-            if(is_zombie(child_proc)){
+            if (is_zombie(child_proc)) {
                 post_sem(&root_proc.childexit);
             }
         }
@@ -238,13 +241,14 @@ NO_RETURN void exit(int code)
     sched(ZOMBIE);
 }
 
-Proc* find_proc(Proc* root, int pid){
-    if(root->pid==pid){
+Proc *find_proc(Proc *root, int pid)
+{
+    if (root->pid == pid) {
         return root;
     }
 
     // No children
-    if(&root->children == root->children.next){
+    if (&root->children == root->children.next) {
         return NULL;
     }
 
@@ -252,18 +256,18 @@ Proc* find_proc(Proc* root, int pid){
     do {
         Proc *current_proc = container_of(current, Proc, ptnode);
 
-        if(current_proc->pid == pid){
+        if (current_proc->pid == pid) {
             return current_proc;
         }
 
-        Proc* child_search = find_proc(current_proc, pid);
-        if(child_search != NULL){
+        Proc *child_search = find_proc(current_proc, pid);
+        if (child_search != NULL) {
             return child_search;
         }
 
         current = current->next;
     } while (current != &root->children);
-    
+
     return NULL;
 }
 
@@ -274,10 +278,10 @@ int kill(int pid)
     // Return -1 if the pid is invalid (proc not found).
 
     acquire_spinlock(&proc_lock);
-    Proc* proc = find_proc(&root_proc, pid);
+    Proc *proc = find_proc(&root_proc, pid);
 
     // Process not found
-    if(proc == NULL){
+    if (proc == NULL) {
         release_spinlock(&proc_lock);
         return -1;
     }

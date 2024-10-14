@@ -8,7 +8,7 @@
 
 struct cpu cpus[NCPU];
 
-static bool __timer_cmp(rb_node lnode, rb_node rnode)
+bool __timer_cmp(rb_node lnode, rb_node rnode)
 {
     i64 d = container_of(lnode, struct timer, _node)->_key -
             container_of(rnode, struct timer, _node)->_key;

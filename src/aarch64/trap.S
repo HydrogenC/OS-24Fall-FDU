@@ -6,7 +6,7 @@
 .global trap_entry
 trap_entry:
 // TODO: save UserContext
-// Save general-purpose registers (x0 is error type, don't need to save)
+// Save general-purpose registers
 pushp(x28, x29)
 pushp(x26, x27)
 pushp(x24, x25)
@@ -33,6 +33,10 @@ mrs x3, tpidr_el0
 mrs x4, sp_el0
 pushp(x1, x2)
 pushp(x3, x4)
+
+// Return the address to the user context
+mov x0, sp
+
 bl trap_global_handler
 
 .global trap_return

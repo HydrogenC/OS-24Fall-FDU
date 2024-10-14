@@ -6,6 +6,10 @@
 #include <kernel/proc.h>
 #include <kernel/syscall.h>
 
+// Reference: https://developer.arm.com/documentation/ddi0601/2024-09/AArch64-Registers/SPSR-EL1--Saved-Program-Status-Register--EL1-
+#define EXTRACT_MODE(pstate) (pstate & 0xF)
+#define MODE_FLAG_USER ((u64)0x0)
+
 void trap_global_handler(UserContext *context)
 {
     thisproc()->ucontext = context;
@@ -43,8 +47,9 @@ void trap_global_handler(UserContext *context)
     }
 
     // TODO: stop killed process while returning to user space
-    // TODO: Check if it's going to enter user mode
-    if (thisproc()->killed){
+    u64 mode_flag = EXTRACT_MODE(context->spsr);
+    if (mode_flag == MODE_FLAG_USER && thisproc()->killed) {
+        printk("CPU %d: Trapped on killed process %d, exiting", cpuid(), thisproc()->pid);
         exit(-1);
     }
 }
