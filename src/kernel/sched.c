@@ -13,13 +13,23 @@ extern bool panic_flag;
 extern RefCount proc_count;
 
 extern void swtch(KernelContext *new_ctx, KernelContext **old_ctx);
-extern bool __timer_cmp(rb_node lnode, rb_node rnode);
 
 // RB tree of runnable processes
 static struct rb_root_ sched_tree = { NULL };
 static SpinLock sched_lock;
 
 struct KernelContext idle_kcontext[NCPU];
+
+static bool __sched_cmp(rb_node lnode, rb_node rnode)
+{
+    auto lsched = container_of(lnode, struct schinfo, sched_node);
+    auto rsched = container_of(rnode, struct schinfo, sched_node);
+    if (lsched->timestamp < rsched->timestamp)
+        return true;
+    if (lsched->timestamp == rsched->timestamp)
+        return lnode < rnode;
+    return false;
+}
 
 void init_sched()
 {
@@ -100,7 +110,7 @@ bool activate_proc(Proc *p)
     case SLEEPING:
     case UNUSED:
         p->state = RUNNABLE;
-        _rb_insert(&p->schinfo.sched_node, &sched_tree, __timer_cmp);
+        _rb_insert(&p->schinfo.sched_node, &sched_tree, __sched_cmp);
         release_sched_lock();
         return true;
     }
@@ -133,7 +143,7 @@ static void update_this_state(enum procstate new_state)
     }
 
     if (prev_state != RUNNABLE && this->state == RUNNABLE) {
-        _rb_insert(&this->schinfo.sched_node, &sched_tree, __timer_cmp);
+        _rb_insert(&this->schinfo.sched_node, &sched_tree, __sched_cmp);
     } else if (prev_state == RUNNABLE && this->state != RUNNABLE) {
         _rb_erase(&this->schinfo.sched_node, &sched_tree);
     }
