@@ -62,9 +62,9 @@ void init_proc(Proc *p)
     init_pgdir(&p->pgdir);
 
     p->kstack = kalloc_page();
-    p->kcontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext));
-    p->ucontext = (p->kstack + PAGE_SIZE - sizeof(KernelContext) -
-                   sizeof(UserContext));
+    p->ucontext = (p->kstack + PAGE_SIZE - sizeof(UserContext));
+    p->kcontext = (p->kstack + PAGE_SIZE - sizeof(UserContext) -
+                   sizeof(KernelContext));
 
     release_spinlock(&proc_lock);
 }

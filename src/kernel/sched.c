@@ -196,7 +196,7 @@ void sched(enum procstate new_state)
     _rb_erase(&next->schinfo.sched_node, &sched_tree);
 
     if (next->pid != 0 && next != this) {
-        printk("CPU %d: Taking on proc with pid %d as next, timestamp = %d. \n",
+        printk("CPU %llu: Taking on proc with pid %d as next, timestamp = %llu. \n",
                cpuid(), next->pid, next->schinfo.timestamp);
     }
 
