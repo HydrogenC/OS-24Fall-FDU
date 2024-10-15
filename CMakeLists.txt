@@ -38,16 +38,16 @@ set(qemu_flags
     -kernel "${kernel_elf}")
 
 add_custom_target(qemu
-    COMMAND ${aarch64_qemu} ${qemu_flags} -gdb tcp::1234
+    COMMAND ${aarch64_qemu} ${qemu_flags} -gdb tcp::1235
     DEPENDS image)
 add_custom_target(qemu-debug
-    COMMAND ${aarch64_qemu} ${qemu_flags} -gdb tcp::1234 -S
+    COMMAND ${aarch64_qemu} ${qemu_flags} -gdb tcp::1235 -S
     DEPENDS image)
 add_custom_target(debug
     COMMAND ${aarch64_gdb} --nx --quiet
             -ex "set architecture aarch64"
             -ex "file ${kernel_elf}"
-            -ex "target remote localhost:1234"
+            -ex "target remote localhost:1235"
     DEPENDS kernel)
 
 # if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")

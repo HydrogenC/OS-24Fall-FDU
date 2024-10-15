@@ -232,6 +232,8 @@ void sched(enum procstate new_state)
 
     if (next != this) {
         attach_pgdir(&next->pgdir);
+
+        // printk("CPU %d: next->kcontext is %llu, &this->kcontext is %llu\n", cpuid(), next->kcontext, &this->kcontext);
         swtch(next->kcontext, &this->kcontext);
     }
 

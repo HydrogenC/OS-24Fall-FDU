@@ -212,7 +212,7 @@ NO_RETURN void exit(int code)
     acquire_spinlock(&proc_lock);
     
     // Notify listeners of child exit
-    printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
+    printk("CPU %d: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
     // Free pgdir
     free_pgdir(&this->pgdir);
