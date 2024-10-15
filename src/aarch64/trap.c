@@ -15,7 +15,7 @@ extern bool done_flag;
 void trap_global_handler(UserContext *context)
 {
     thisproc()->ucontext = context;
-
+    
     u64 esr = arch_get_esr();
     u64 ec = esr >> ESR_EC_SHIFT;
     u64 iss = esr & ESR_ISS_MASK;
@@ -39,7 +39,8 @@ void trap_global_handler(UserContext *context)
     case ESR_EC_IABORT_EL1:
     case ESR_EC_DABORT_EL0:
     case ESR_EC_DABORT_EL1: {
-        printk("Page fault, esr is %llu\n", esr);
+        u64 far = arch_get_far();
+        printk("Page fault, esr is %llu, far is %llu\n", esr, far);
         PANIC();
     } break;
     default: {
@@ -50,12 +51,9 @@ void trap_global_handler(UserContext *context)
 
     // TODO: stop killed process while returning to user space
     u64 mode_flag = EXTRACT_MODE(context->spsr);
-    if(mode_flag == MODE_FLAG_USER && done_flag){
-        printk("CPU %d: Trapped on killed process %d. \n", cpuid(), thisproc()->pid);
-    }
-
     if (mode_flag == MODE_FLAG_USER && thisproc()->killed) {
-        printk("CPU %d: Trapped called on killed process %d, calling exit. \n", cpuid(), thisproc()->pid);
+        printk("CPU %d: Trapped called on killed process %d, calling exit. \n",
+               cpuid(), thisproc()->pid);
         exit(-1);
     }
 }

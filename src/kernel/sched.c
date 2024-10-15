@@ -233,8 +233,11 @@ void sched(enum procstate new_state)
     if (next != this) {
         attach_pgdir(&next->pgdir);
 
-        // printk("CPU %d: next->kcontext is %llu, &this->kcontext is %llu\n", cpuid(), next->kcontext, &this->kcontext);
+        // Ensure that the link register is jumpable
+        ASSERT(next->kcontext->lr > 0);
         swtch(next->kcontext, &this->kcontext);
+        // Ensure the returned lr is jumpable
+        ASSERT(this->kcontext->lr > 0);
     }
 
     release_sched_lock();
