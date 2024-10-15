@@ -66,6 +66,7 @@ void init_proc(Proc *p)
     p->kcontext = (p->kstack + PAGE_SIZE - sizeof(UserContext) -
                    sizeof(KernelContext));
 
+    ASSERT(p->killed == 0);
     release_spinlock(&proc_lock);
 }
 
@@ -168,7 +169,7 @@ int wait(int *exitcode)
 
     // printk("Proc{pid=%d} waiting for children. \n", this->pid);
     wait_sem(&this->childexit);
-    // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
+    printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
 
     acquire_spinlock(&proc_lock);
     // Move to first child (this->children is a placeholder)
@@ -209,9 +210,9 @@ NO_RETURN void exit(int code)
 
     this->exitcode = code;
     acquire_spinlock(&proc_lock);
-
+    
     // Notify listeners of child exit
-    // printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
+    printk("Proc{pid=%d} posted exit sem to parent{pid=%d}. \n", this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
     // Free pgdir
     free_pgdir(&this->pgdir);
@@ -286,8 +287,13 @@ int kill(int pid)
         return -1;
     }
 
+    if(proc->state == UNUSED){
+        return -1;
+    }
+
     proc->killed = true;
     activate_proc(proc);
     release_spinlock(&proc_lock);
+    printk("Killing proc %d with state %d. \n", proc->pid, proc->state);
     return 0;
 }

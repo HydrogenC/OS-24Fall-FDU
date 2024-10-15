@@ -9,6 +9,7 @@
 #include <common/rc.h>
 #include "sched.h"
 
+extern bool done_flag;
 extern bool panic_flag;
 extern RefCount proc_count;
 
@@ -19,6 +20,7 @@ static struct rb_root_ sched_tree = { NULL };
 static SpinLock sched_lock;
 
 struct KernelContext idle_kcontext[NCPU];
+struct timer sched_timers[NCPU];
 
 static bool __sched_cmp(rb_node lnode, rb_node rnode)
 {
@@ -31,6 +33,14 @@ static bool __sched_cmp(rb_node lnode, rb_node rnode)
     return false;
 }
 
+void timer_handler(struct timer *timer)
+{
+    timer->triggered = false;
+    // Give up CPU ownership to other procs
+    acquire_sched_lock();
+    sched(RUNNABLE);
+}
+
 void init_sched()
 {
     init_spinlock(&sched_lock);
@@ -39,12 +49,18 @@ void init_sched()
         cpus[i].sched.idle_proc = kalloc(sizeof(Proc));
         cpus[i].sched.idle_proc->state = RUNNING;
         cpus[i].sched.idle_proc->idle = true;
+        cpus[i].sched.idle_proc->killed = false;
         // Set pid of idle proc to 0 (for debug purposes)
         cpus[i].sched.idle_proc->pid = 0;
         cpus[i].sched.idle_proc->kcontext = &idle_kcontext[i];
 
         // Run the idle task before any real tasks are scheduled
         cpus[i].sched.this_proc = cpus[i].sched.idle_proc;
+
+        // Setup CPU timers
+        sched_timers[i].triggered = false;
+        sched_timers[i].elapse = 100;
+        sched_timers[i].handler = timer_handler;
     }
 }
 
@@ -175,6 +191,13 @@ static void update_this_proc(Proc *p)
     // TODO: you should implement this routinue
     // update thisproc to the choosen process
     cpus[cpuid()].sched.this_proc = p;
+
+    // Cancel previous timer (if exists) and setup new timer
+    auto timer = &sched_timers[cpuid()];
+    if (!timer->triggered) {
+        cancel_cpu_timer(timer);
+    }
+    set_cpu_timer(timer);
 }
 
 // A simple scheduler.
@@ -196,8 +219,8 @@ void sched(enum procstate new_state)
     _rb_erase(&next->schinfo.sched_node, &sched_tree);
 
     if (next->pid != 0 && next != this) {
-        printk("CPU %llu: Taking on proc with pid %d as next, timestamp = %llu. \n",
-               cpuid(), next->pid, next->schinfo.timestamp);
+        printk("CPU %llu: Taking on proc with pid %d as next, time elapsed = %llu. \n",
+               cpuid(), next->pid, get_timestamp() - next->schinfo.timestamp);
     }
 
     // If process killed, then directly return and stuck the current CPU on this process

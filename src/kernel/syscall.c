@@ -8,6 +8,8 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Woverride-init"
 
+extern bool done_flag;
+
 void *syscall_table[NR_SYSCALL] = {
     [0 ... NR_SYSCALL - 1] = NULL,
     [SYS_myreport] = (void *)syscall_myreport,

@@ -11,6 +11,8 @@
 
 PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc);
 
+bool done_flag = false;
+
 void vm_test()
 {
     printk("vm_test\n");
@@ -86,6 +88,7 @@ void user_proc_test()
     }
     ASSERT(wait_sem(&myrepot_done));
     printk("done\n");
+    done_flag = true;
     for (int i = 0; i < 22; i++)
         ASSERT(kill(pids[i]) == 0);
     for (int i = 0; i < 22; i++) {
