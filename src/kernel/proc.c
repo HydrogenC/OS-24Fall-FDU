@@ -176,6 +176,7 @@ int wait(int *exitcode)
     child = child->next;
     while (child != &this->children) {
         Proc *child_proc = container_of(child, Proc, ptnode);
+        // `is_zombie` waits for sched_lock, so that it can be ensured that `sched` has finished. 
         if (is_zombie(child_proc)) {
             *exitcode = child_proc->exitcode;
             int child_pid = child_proc->pid;

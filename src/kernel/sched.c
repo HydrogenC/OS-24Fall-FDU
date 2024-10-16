@@ -9,7 +9,6 @@
 #include <common/rc.h>
 #include "sched.h"
 
-extern bool done_flag;
 extern bool panic_flag;
 extern RefCount proc_count;
 
@@ -186,18 +185,22 @@ static Proc *pick_next()
     return cpus[cpuid()].sched.idle_proc;
 }
 
-static void update_this_proc(Proc *p)
+static void reset_timer()
 {
-    // TODO: you should implement this routinue
-    // update thisproc to the choosen process
-    cpus[cpuid()].sched.this_proc = p;
-
     // Cancel previous timer (if exists) and setup new timer
     auto timer = &sched_timers[cpuid()];
     if (!timer->triggered) {
         cancel_cpu_timer(timer);
     }
     set_cpu_timer(timer);
+}
+
+static void update_this_proc(Proc *p)
+{
+    // TODO: you should implement this routinue
+    // update thisproc to the choosen process
+    cpus[cpuid()].sched.this_proc = p;
+    reset_timer();
 }
 
 // A simple scheduler.
@@ -208,7 +211,13 @@ void sched(enum procstate new_state)
     auto this = thisproc();
     ASSERT(this->state == RUNNING);
     update_this_state(new_state);
-    this->schinfo.timestamp = get_timestamp();
+    this->schinfo.timestamp = get_timestamp_ms();
+
+    // If process killed and not ZOMBIE, then directly return and get back to `trap_global_handler`
+    if (this->killed && new_state != ZOMBIE) {
+        release_sched_lock();
+        return;
+    }
 
     auto next = pick_next();
     update_this_proc(next);
@@ -218,26 +227,17 @@ void sched(enum procstate new_state)
     next->state = RUNNING;
     _rb_erase(&next->schinfo.sched_node, &sched_tree);
 
-    if (next->pid != 0 && next != this) {
+    /*
+    if (next->pid > 1) {
         printk("CPU %llu: Taking on proc with pid %d as next, time elapsed = %llu. \n",
-               cpuid(), next->pid, get_timestamp() - next->schinfo.timestamp);
+               cpuid(), next->pid,
+               get_timestamp_ms() - next->schinfo.timestamp);
     }
-
-    // If process killed, then directly return and stuck the current CPU on this process
-    // and wait for trap to call `exit`.
-    if (next->killed && new_state != ZOMBIE) {
-        release_sched_lock();
-        return;
-    }
+    */
 
     if (next != this) {
         attach_pgdir(&next->pgdir);
-
-        // Ensure that the link register is jumpable
-        ASSERT(next->kcontext->lr > 0);
         swtch(next->kcontext, &this->kcontext);
-        // Ensure the returned lr is jumpable
-        ASSERT(this->kcontext->lr > 0);
     }
 
     release_sched_lock();

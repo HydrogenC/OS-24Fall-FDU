@@ -8,14 +8,13 @@
 
 // Reference: https://developer.arm.com/documentation/ddi0601/2024-09/AArch64-Registers/SPSR-EL1--Saved-Program-Status-Register--EL1-
 #define EXTRACT_MODE(pstate) (pstate & 0xF)
+#define GET_DIAF(pstate) ((pstate >> 5) & 0xF)
 #define MODE_FLAG_USER ((u64)0x0)
-
-extern bool done_flag;
 
 void trap_global_handler(UserContext *context)
 {
     thisproc()->ucontext = context;
-    
+
     u64 esr = arch_get_esr();
     u64 ec = esr >> ESR_EC_SHIFT;
     u64 iss = esr & ESR_ISS_MASK;
@@ -27,9 +26,10 @@ void trap_global_handler(UserContext *context)
 
     switch (ec) {
     case ESR_EC_UNKNOWN: {
-        if (ir)
+        if (ir) {
+            printk("Unknown fault, esr is %llu\n", esr);
             PANIC();
-        else
+        } else
             interrupt_global_handler();
     } break;
     case ESR_EC_SVC64: {
@@ -50,8 +50,8 @@ void trap_global_handler(UserContext *context)
     }
 
     // TODO: stop killed process while returning to user space
-    u64 mode_flag = EXTRACT_MODE(context->spsr);
-    if (mode_flag == MODE_FLAG_USER && thisproc()->killed) {
+    u64 mode_flag = GET_DIAF(context->spsr);
+    if (mode_flag == 0x0 && thisproc()->killed) {
         printk("CPU %d: Trapped called on killed process %d, calling exit. \n",
                cpuid(), thisproc()->pid);
         exit(-1);

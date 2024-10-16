@@ -65,3 +65,6 @@ int start_proc(Proc *, void (*entry)(u64), u64 arg);
 NO_RETURN void exit(int code);
 int wait(int *exitcode);
 int kill(int pid);
+
+#define FILE_LINE_PROBE printk("CPU %d: %s:%d\n", cpuid(), __FILE__, __LINE__)
+#define FILE_LINE_PROBE_MSG(x) printk("CPU %d: %s:%d, %s\n", cpuid(), __FILE__, __LINE__, x)

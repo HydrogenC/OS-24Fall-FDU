@@ -164,5 +164,5 @@ void attach_pgdir(struct pgdir *pgdir)
         arch_set_ttbr0(K2P(pgdir->pt));
     else
         arch_set_ttbr0(K2P(&invalid_pt));
-    flush_tlb();
+    // flush_tlb();
 }
