@@ -169,7 +169,7 @@ int wait(int *exitcode)
 
     // printk("Proc{pid=%d} waiting for children. \n", this->pid);
     wait_sem(&this->childexit);
-    printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
+    // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
 
     acquire_spinlock(&proc_lock);
     // Move to first child (this->children is a placeholder)

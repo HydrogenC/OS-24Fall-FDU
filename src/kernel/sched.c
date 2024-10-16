@@ -58,7 +58,7 @@ void init_sched()
 
         // Setup CPU timers
         sched_timers[i].triggered = false;
-        sched_timers[i].elapse = 10;
+        sched_timers[i].elapse = 20;
         sched_timers[i].handler = timer_handler;
     }
 }
