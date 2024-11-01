@@ -6,6 +6,11 @@
 #include <kernel/proc.h>
 #include <kernel/syscall.h>
 
+// Reference: https://developer.arm.com/documentation/ddi0601/2024-09/AArch64-Registers/SPSR-EL1--Saved-Program-Status-Register--EL1-
+#define EXTRACT_MODE(pstate) (pstate & 0xF)
+#define GET_DIAF(pstate) ((pstate >> 5) & 0xF)
+#define MODE_FLAG_USER ((u64)0x0)
+
 void trap_global_handler(UserContext *context)
 {
     thisproc()->ucontext = context;
@@ -21,9 +26,10 @@ void trap_global_handler(UserContext *context)
 
     switch (ec) {
     case ESR_EC_UNKNOWN: {
-        if (ir)
+        if (ir) {
+            printk("Unknown fault, esr is %llu\n", esr);
             PANIC();
-        else
+        } else
             interrupt_global_handler();
     } break;
     case ESR_EC_SVC64: {
@@ -33,7 +39,8 @@ void trap_global_handler(UserContext *context)
     case ESR_EC_IABORT_EL1:
     case ESR_EC_DABORT_EL0:
     case ESR_EC_DABORT_EL1: {
-        printk("Page fault\n");
+        u64 far = arch_get_far();
+        printk("Page fault, esr is %llu, far is %llu\n", esr, far);
         PANIC();
     } break;
     default: {
@@ -43,6 +50,12 @@ void trap_global_handler(UserContext *context)
     }
 
     // TODO: stop killed process while returning to user space
+    u64 mode_flag = GET_DIAF(context->spsr);
+    if (mode_flag == 0x0 && thisproc()->killed) {
+        printk("CPU %d: Trapped called on killed process %d, calling exit. \n",
+               cpuid(), thisproc()->pid);
+        exit(-1);
+    }
 }
 
 NO_RETURN void trap_error_handler(u64 type)

@@ -9,7 +9,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../musl/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../musl/arch/aarch64)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../musl/arch/generic)
 
-set(compiler_warnings "-Werror -Wall -Wextra")
+# Ignore warnings before the code is finished
+set(compiler_warnings "-Wall -Wextra")
 set(compiler_flags "${compiler_warnings} \
     -fno-pie -fno-pic -fno-stack-protector \
     -fno-zero-initialized-in-bss \

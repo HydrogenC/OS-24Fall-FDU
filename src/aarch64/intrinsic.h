@@ -262,6 +262,14 @@ static ALWAYS_INLINE void arch_yield()
     asm volatile("yield" ::: "memory");
 }
 
+static ALWAYS_INLINE void flush_tlb()
+{
+    asm volatile("dsb ishst");
+    asm volatile("tlbi vmalle1is");
+    asm volatile("dsb ish");
+    asm volatile("isb");
+}
+
 static ALWAYS_INLINE u64 get_cntv_ctl_el0()
 {
     u64 c;
