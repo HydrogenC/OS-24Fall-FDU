@@ -24,7 +24,7 @@ void io_test()
         buffer[0].flags = 0;
         buffer[0].block_no = (u32)i;
         virtio_blk_rw(&buffer[0]);
-        
+
         // Write a pattern to block `i`.
         buffer[i].flags = B_DIRTY;
         buffer[i].block_no = (u32)i;

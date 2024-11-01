@@ -96,6 +96,7 @@ struct virtq {
     struct {
         volatile u8 status;
         volatile u8 done;
+        Semaphore* sem;
         u8 *buf;
     } info[NQUEUE];
 };

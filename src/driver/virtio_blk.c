@@ -62,7 +62,7 @@ int virtio_blk_rw(Buf *b)
     enum diskop op = DREAD;
     if (b->flags & B_DIRTY)
         op = DWRITE;
-    
+
     init_sem(&b->sem, 0);
 
     u64 sector = b->block_no;
@@ -109,13 +109,20 @@ int virtio_blk_rw(Buf *b)
     disk.virtq.avail->idx++;
 
     disk.virtq.info[d0].buf = b->data;
+    disk.virtq.info[d0].sem = &b->sem;
 
     arch_fence();
     REG(VIRTIO_REG_QUEUE_NOTIFY) = 0;
     arch_fence();
 
     /* LAB 4 TODO 1 BEGIN */
-    
+    while (!disk.virtq.info[d0].done) {
+        // printk("Waiting for sem! \n");
+        release_spinlock(&disk.lk);
+        wait_sem(&b->sem);
+        acquire_spinlock(&disk.lk);
+    }
+    // printk("Got sem! \n");
     /* LAB 4 TODO 1 END */
 
     disk.virtq.info[d0].done = 0;
@@ -139,7 +146,9 @@ static void virtio_blk_intr()
         }
 
         /* LAB 4 TODO 2 BEGIN */
-    
+        disk.virtq.info[d0].done = 1;
+        // printk("Posting sem! \n");
+        post_sem(disk.virtq.info[d0].sem);
         /* LAB 4 TODO 2 END */
 
         disk.virtq.info[d0].buf = NULL;
