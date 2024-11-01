@@ -147,7 +147,6 @@ static void virtio_blk_intr()
 
         /* LAB 4 TODO 2 BEGIN */
         disk.virtq.info[d0].done = 1;
-        // printk("Posting sem! \n");
         post_sem(disk.virtq.info[d0].sem);
         /* LAB 4 TODO 2 END */
 
