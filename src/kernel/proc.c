@@ -299,7 +299,7 @@ int kill(int pid)
     }
 
     proc->killed = true;
-    activate_proc(proc);
+    alert_proc(proc);
     release_spinlock(&proc_lock);
     // printk("Killing proc %d with state %d. \n", proc->pid, proc->state);
     return 0;
