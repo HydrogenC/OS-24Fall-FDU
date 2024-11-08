@@ -7,7 +7,8 @@
 #include <common/rbtree.h>
 #include <common/sem.h>
 #include <common/rc.h>
-#include "sched.h"
+#include <kernel/sched.h>
+#include <driver/clock.h>
 
 extern bool panic_flag;
 extern RefCount proc_count;
@@ -114,6 +115,12 @@ bool _activate_proc(Proc *p, bool onalert)
     // if the proc->state is DEEPSLEEPING, do nothing if onalert or activate it if else, and return the corresponding value.
 
     // printk("CPU %d: Activating Proc{pid=%d, state=%d}, count=%d\n", cpuid(), p->pid, p->state, proc_count.count);
+
+    // Return directly if deep sleeping is alerted
+    if (p->state == DEEPSLEEPING && onalert) {
+        return false;
+    }
+
     acquire_sched_lock();
 
     switch (p->state) {
@@ -122,10 +129,12 @@ bool _activate_proc(Proc *p, bool onalert)
     case ZOMBIE:
         release_sched_lock();
         return false;
+    case DEEPSLEEPING:
     case SLEEPING:
     case UNUSED:
         p->state = RUNNABLE;
-        _rb_insert(&p->schinfo.sched_node, &sched_tree, __sched_cmp);
+        ASSERT(_rb_insert(&p->schinfo.sched_node, &sched_tree, __sched_cmp) >=
+               0);
         release_sched_lock();
         return true;
     }
@@ -158,7 +167,8 @@ static void update_this_state(enum procstate new_state)
     }
 
     if (prev_state != RUNNABLE && this->state == RUNNABLE) {
-        _rb_insert(&this->schinfo.sched_node, &sched_tree, __sched_cmp);
+        ASSERT(_rb_insert(&this->schinfo.sched_node, &sched_tree,
+                          __sched_cmp) >= 0);
     } else if (prev_state == RUNNABLE && this->state != RUNNABLE) {
         _rb_erase(&this->schinfo.sched_node, &sched_tree);
     }

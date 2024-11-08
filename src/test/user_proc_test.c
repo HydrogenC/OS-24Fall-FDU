@@ -82,7 +82,7 @@ void user_proc_test()
         p->ucontext->spsr = 0;
 
         pids[i] = start_proc(p, trap_return, 0);
-        printk("CPU %d: pid[%d] = %d\n", cpuid(), i, pids[i]);
+        printk("CPU %lld: pid[%d] = %d\n", cpuid(), i, pids[i]);
     }
     ASSERT(wait_sem(&myrepot_done));
     printk("done\n");

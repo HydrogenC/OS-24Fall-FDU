@@ -119,7 +119,9 @@ int virtio_blk_rw(Buf *b)
     while (!disk.virtq.info[d0].done) {
         // printk("Waiting for sem! \n");
         release_spinlock(&disk.lk);
-        wait_sem(&b->sem);
+        if (!wait_sem(&b->sem)) {
+            return -1;
+        }
         acquire_spinlock(&disk.lk);
     }
     // printk("Got sem! \n");

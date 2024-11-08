@@ -52,7 +52,7 @@ void trap_global_handler(UserContext *context)
     // TODO: stop killed process while returning to user space
     u64 mode_flag = GET_DIAF(context->spsr);
     if (mode_flag == 0x0 && thisproc()->killed) {
-        printk("CPU %d: Trapped called on killed process %d, calling exit. \n",
+        printk("CPU %llu: Trapped called on killed process %d, calling exit. \n",
                cpuid(), thisproc()->pid);
         exit(-1);
     }

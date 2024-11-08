@@ -40,7 +40,7 @@ void init_pages()
 
     // Stop addr in kernel space
     int counter = 0;
-    char *kernel_stop = P2K(PHYSTOP);
+    char *kernel_stop = (char*)P2K(PHYSTOP);
     for (char *i = heap_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
 
@@ -144,7 +144,7 @@ void add_to_list(page_header *p_page)
 // Debug code, to check if the linked list works properly
 void __walk_list(page_header *lk)
 {
-    page_header *pg = lk, *prev_pg;
+    page_header *pg = lk, *prev_pg = NULL;
     int cnt = 0;
     while (pg != NULL) {
         prev_pg = pg;
@@ -238,7 +238,7 @@ void *kalloc(unsigned long long size)
     if (!p_page) {
         p_page = kalloc_page();
         if (!p_page) {
-            printk("PANIC: cannot alloc page for tier %d, used pages: %d, returning NULL\n",
+            printk("PANIC: cannot alloc page for tier %d, used pages: %lld, returning NULL\n",
                    tier, kalloc_page_cnt.count);
             return NULL;
         }

@@ -18,7 +18,6 @@ VIRTUAL ADDR LAYOUT:
 // Check if the entry is valid (the lowest bit of invalid descriptors is 0)
 #define CHECK_DESCRIPTOR(entry) (entry & 0x1)
 
-__attribute__((always_inline)) 
 PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr){
     PTEntry descriptor = (PTEntry)next_level_addr;
 
@@ -27,7 +26,6 @@ PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr){
     return descriptor;
 }
 
-__attribute__((always_inline)) 
 PTEntry construct_page_descriptor(PTEntriesPtr phys_addr){
     PTEntry descriptor = (PTEntry)phys_addr;
 
@@ -48,7 +46,7 @@ PTEntriesPtr allocate_table(PTEntry* parent_level_pte)
 
     // Write physical address to parent level page table if applicable
     if (parent_level_pte) {
-        *parent_level_pte = construct_table_descriptor(K2P(new_page_table));
+        *parent_level_pte = construct_table_descriptor((PTEntriesPtr)K2P(new_page_table));
     }
     return new_page_table;
 }
@@ -80,7 +78,7 @@ PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc)
             return NULL;
         }
     } else {
-        pt_l1 = P2K(PTE_ADDRESS(pt_l0[index_l0]));
+        pt_l1 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l0[index_l0]));
     }
 
     u64 index_l1 = VA_PART1(va);
@@ -93,7 +91,7 @@ PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc)
             return NULL;
         }
     } else {
-        pt_l2 = P2K(PTE_ADDRESS(pt_l1[index_l1]));
+        pt_l2 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l1[index_l1]));
     }
 
     u64 index_l2 = VA_PART2(va);
@@ -106,7 +104,7 @@ PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc)
             return NULL;
         }
     } else {
-        pt_l3 = P2K(PTE_ADDRESS(pt_l2[index_l2]));
+        pt_l3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l2[index_l2]));
     }
 
     u64 index_l3 = VA_PART3(va);
@@ -132,19 +130,19 @@ void free_pgdir(struct pgdir *pgdir)
             continue;
         }
 
-        PTEntriesPtr pt_l1 = P2K(PTE_ADDRESS(pgdir->pt[i0]));
+        PTEntriesPtr pt_l1 = (PTEntriesPtr)P2K(PTE_ADDRESS(pgdir->pt[i0]));
         for (int i1 = 0; i1 < N_PTE_PER_TABLE; i1++) {
             if (!CHECK_DESCRIPTOR(pt_l1[i1])) {
                 continue;
             }
 
-            PTEntriesPtr pt_l2 = P2K(PTE_ADDRESS(pt_l1[i1]));
+            PTEntriesPtr pt_l2 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l1[i1]));
             for (int i2 = 0; i2 < N_PTE_PER_TABLE; i2++) {
                 if (!CHECK_DESCRIPTOR(pt_l2[i2])) {
                     continue;
                 }
 
-                PTEntriesPtr pt_l3 = P2K(PTE_ADDRESS(pt_l2[i2]));
+                PTEntriesPtr pt_l3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l2[i2]));
                 kfree_page(pt_l3);
             }
 

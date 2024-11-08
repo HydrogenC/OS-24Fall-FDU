@@ -132,7 +132,7 @@ int start_proc(Proc *p, void (*entry)(u64), u64 arg)
     // Set the second param, same as above
     p->kcontext->x1 = (u64)arg;
     // Set the jump address
-    p->kcontext->lr = &proc_entry;
+    p->kcontext->lr = (u64)&proc_entry;
 
     increment_rc(&proc_count);
     activate_proc(p);
@@ -168,7 +168,10 @@ int wait(int *exitcode)
     release_spinlock(&proc_lock);
 
     // printk("Proc{pid=%d} waiting for children. \n", this->pid);
-    wait_sem(&this->childexit);
+    if(!wait_sem(&this->childexit)){
+        // Proc killed, return directly
+        return -1;
+    }
     // printk("Proc{pid=%d} got sem signal, sem val=%d. \n", this->pid, this->childexit.val);
 
     acquire_spinlock(&proc_lock);
@@ -197,7 +200,7 @@ int wait(int *exitcode)
     return -1;
 }
 
-NO_RETURN void exit(int code)
+void exit(int code)
 {
     // TODO:
     // 1. set the exitcode
@@ -213,7 +216,7 @@ NO_RETURN void exit(int code)
     acquire_spinlock(&proc_lock);
     
     // Notify listeners of child exit
-    printk("CPU %d: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
+    // printk("CPU %lld: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
     // Free pgdir
     free_pgdir(&this->pgdir);
@@ -295,6 +298,6 @@ int kill(int pid)
     proc->killed = true;
     activate_proc(proc);
     release_spinlock(&proc_lock);
-    printk("Killing proc %d with state %d. \n", proc->pid, proc->state);
+    // printk("Killing proc %d with state %d. \n", proc->pid, proc->state);
     return 0;
 }
