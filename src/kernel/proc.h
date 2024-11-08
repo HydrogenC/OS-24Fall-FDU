@@ -62,6 +62,6 @@ void init_kproc();
 void init_proc(Proc *);
 WARN_RESULT Proc *create_proc();
 int start_proc(Proc *, void (*entry)(u64), u64 arg);
-void exit(int code);
+NO_RETURN void exit(int code);
 WARN_RESULT int wait(int *exitcode);
 WARN_RESULT int kill(int pid);

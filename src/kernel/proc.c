@@ -200,7 +200,7 @@ int wait(int *exitcode)
     return -1;
 }
 
-void exit(int code)
+NO_RETURN void exit(int code)
 {
     // TODO:
     // 1. set the exitcode
@@ -244,6 +244,9 @@ void exit(int code)
     acquire_sched_lock();
     release_spinlock(&proc_lock);
     sched(ZOMBIE);
+
+    printk("Shouldn't reach here, must be something wrong with `sched`. \n");
+    PANIC();
 }
 
 Proc *find_proc(Proc *root, int pid)
