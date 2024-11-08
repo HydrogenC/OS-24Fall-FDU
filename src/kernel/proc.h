@@ -4,21 +4,41 @@
 #include <common/list.h>
 #include <common/sem.h>
 #include <common/rbtree.h>
+#include <kernel/cpu.h>
 #include <kernel/pt.h>
 
 enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 
+// Reference: https://github.com/rcore-os/trapframe-rs/blob/master/src/arch/aarch64/mod.rs
 typedef struct UserContext {
-    // TODO: customize your trap frame
+    // Reserved for user mode traps, not used now
+    u64 tpidr, sp;
+    // Special registers
+    u64 spsr, elr;
+    // x30, reserve 8 bytes for alignment
+    u64 lr, __reserved;
+    // General purpose registers, x0 ~ x29
+    u64 x[30];
 } UserContext;
 
+// Save callee-saved registers here
+// Reference: https://developer.arm.com/documentation/102374/0101/Procedure-Call-Standard
 typedef struct KernelContext {
-    // TODO: customize your context
+    // General purpose, x19 ~ x29
+    u64 x[11];
+    // Link register, for jumping to the code of the process
+    u64 lr;
+    // Argument 0 and 1
+    u64 x0;
+    u64 x1;
 } KernelContext;
 
 // embeded data for procs
 struct schinfo {
-    // TODO: customize your sched info
+    // Node for round-robin scheduling
+    struct rb_node_ sched_node;
+    // The timestamp of the last time the proc was running
+    u64 timestamp;
 };
 
 typedef struct Proc {
