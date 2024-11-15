@@ -4,6 +4,7 @@
 #include <kernel/mem.h>
 #include <kernel/printk.h>
 #include <kernel/proc.h>
+#include <common/rc.h>
 
 /**
     @brief the private reference to the super block.
@@ -20,7 +21,7 @@ static const SuperBlock *sblock;
 /**
     @brief the reference to the underlying block device.
  */
-static const BlockDevice *device; 
+static const BlockDevice *device;
 
 /**
     @brief global lock for block cache.
@@ -44,6 +45,8 @@ static ListNode head;
 
 static LogHeader header; // in-memory copy of log header block.
 
+static RefCount num_cached_blocks;
+
 /**
     @brief a struct to maintain other logging states.
     
@@ -62,27 +65,32 @@ struct {
 } log;
 
 // read the content from disk.
-static INLINE void device_read(Block *block) {
+static INLINE void device_read(Block *block)
+{
     device->read(block->block_no, block->data);
 }
 
 // write the content back to disk.
-static INLINE void device_write(Block *block) {
+static INLINE void device_write(Block *block)
+{
     device->write(block->block_no, block->data);
 }
 
 // read log header from disk.
-static INLINE void read_header() {
+static INLINE void read_header()
+{
     device->read(sblock->log_start, (u8 *)&header);
 }
 
 // write log header back to disk.
-static INLINE void write_header() {
+static INLINE void write_header()
+{
     device->write(sblock->log_start, (u8 *)&header);
 }
 
 // initialize a block struct.
-static void init_block(Block *block) {
+static void init_block(Block *block)
+{
     block->block_no = 0;
     init_list_node(&block->node);
     block->acquired = false;
@@ -94,52 +102,143 @@ static void init_block(Block *block) {
 }
 
 // see `cache.h`.
-static usize get_num_cached_blocks() {
+static usize get_num_cached_blocks()
+{
     // TODO
-    return 0;
+    return num_cached_blocks.count;
+}
+
+// Walk the cache list, for debug purpose
+void __walk_cache_list()
+{
+    ListNode *node = head.next;
+    while (node != &head) {
+        Block *current_blk = container_of(node, Block, node);
+        printk("Block{no=%llu}->", current_blk->block_no);
+        node = node->next;
+    }
+    printk("\n");
+}
+
+// Evict one cache block, typically the last element in list
+static int cache_evict() {
+    ListNode *node = head.prev;
+
+    acquire_spinlock(&lock);
+    // Inverse traverse, find the cache that is used least recently (LRU)
+    while (node != &head) {
+        Block *current_blk = container_of(node, Block, node);
+        // Skip pinned blocks
+        if (!current_blk->pinned) {
+            printk("Evicting block No. %llu\n", current_blk->block_no);
+            _detach_from_list(&current_blk->node);
+            decrement_rc(&num_cached_blocks);
+            break;
+        }
+
+        node = node->prev;
+    }
+    release_spinlock(&lock);
 }
 
 // see `cache.h`.
-static Block *cache_acquire(usize block_no) {
+static Block *cache_acquire(usize block_no)
+{
     // TODO
-    return 0;
+    ListNode *node = head.next;
+    Block *blk = NULL;
+
+    acquire_spinlock(&lock);
+    while (node != &head) {
+        Block *current_blk = container_of(node, Block, node);
+        if (current_blk->block_no == block_no) {
+            printk("Found block No. %llu\n", current_blk->block_no);
+            blk = current_blk;
+
+            // Move node to front of the list, so that the list is ordered by access time (LRU)
+            _detach_from_list(&current_blk->node);
+            _insert_into_list(&head, &current_blk->node);
+            break;
+        }
+
+        node = node->next;
+    }
+    release_spinlock(&lock);
+
+    // Cache block not found, read from disk
+    if (!blk) {
+        if(get_num_cached_blocks() >= EVICTION_THRESHOLD){
+            cache_evict();
+        }
+
+        printk("Initing block No. %llu\n", block_no);
+        blk = (Block*)kalloc(sizeof(Block));
+        init_block(blk);
+        blk->block_no = block_no;
+        device_read(blk);
+        blk->valid = true;
+
+        increment_rc(&num_cached_blocks);
+        insert_into_list(&lock, &head, &blk->node);
+    }
+
+    if(!acquire_sleeplock(&blk->lock)){
+        return NULL;
+    }
+    blk->acquired = true;
+
+    return blk;
 }
 
 // see `cache.h`.
-static void cache_release(Block *block) {
-    // TODO
+static void cache_release(Block *block)
+{
+    block->acquired = false;
+    release_sleeplock(&block->lock);
 }
 
 // see `cache.h`.
-void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device) {
+void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device)
+{
     sblock = _sblock;
     device = _device;
 
     // TODO
+    init_spinlock(&lock);
+    init_rc(&num_cached_blocks);
+    init_list_node(&head);
 }
 
 // see `cache.h`.
-static void cache_begin_op(OpContext *ctx) {
+static void cache_begin_op(OpContext *ctx)
+{
     // TODO
 }
 
 // see `cache.h`.
-static void cache_sync(OpContext *ctx, Block *block) {
+static void cache_sync(OpContext *ctx, Block *block)
+{
+    // TODO
+    if(!ctx){
+        device_write(block);
+    }
+}
+
+// see `cache.h`.
+static void cache_end_op(OpContext *ctx)
+{
     // TODO
 }
 
 // see `cache.h`.
-static void cache_end_op(OpContext *ctx) {
+static usize cache_alloc(OpContext *ctx)
+{
     // TODO
 }
 
 // see `cache.h`.
-static usize cache_alloc(OpContext *ctx) {
-    // TODO
-}
-
-// see `cache.h`.
-static void cache_free(OpContext *ctx, usize block_no) {
+static void cache_free(OpContext *ctx, usize block_no)
+{
     // TODO
 }
 
