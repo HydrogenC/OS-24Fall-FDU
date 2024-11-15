@@ -62,6 +62,10 @@ static RefCount num_cached_blocks;
  */
 struct {
     /* your fields here */
+    SpinLock lock;
+    Semaphore sem;
+    bool committing;
+    int num_ops;
 } log;
 
 // read the content from disk.
@@ -121,71 +125,73 @@ void __walk_cache_list()
 }
 
 // Evict one cache block, typically the last element in list
-static int cache_evict() {
+static int cache_evict()
+{
     ListNode *node = head.prev;
 
-    acquire_spinlock(&lock);
     // Inverse traverse, find the cache that is used least recently (LRU)
     while (node != &head) {
         Block *current_blk = container_of(node, Block, node);
-        // Skip pinned blocks
-        if (!current_blk->pinned) {
-            printk("Evicting block No. %llu\n", current_blk->block_no);
+        // Skip acquired and pinned blocks
+        if (!current_blk->acquired && !current_blk->pinned) {
+            // printk("Evicting block No. %llu\n", current_blk->block_no);
             _detach_from_list(&current_blk->node);
             decrement_rc(&num_cached_blocks);
+            kfree(current_blk);
             break;
         }
 
         node = node->prev;
     }
-    release_spinlock(&lock);
+}
+
+Block *try_find_block(usize block_no)
+{
+    ListNode *node = head.next;
+
+    while (node != &head) {
+        Block *current_blk = container_of(node, Block, node);
+        if (current_blk->block_no == block_no) {
+            // printk("Found block No. %llu\n", current_blk->block_no);
+            return current_blk;
+        }
+
+        node = node->next;
+    }
+
+    return NULL;
 }
 
 // see `cache.h`.
 static Block *cache_acquire(usize block_no)
 {
     // TODO
-    ListNode *node = head.next;
-    Block *blk = NULL;
-
     acquire_spinlock(&lock);
-    while (node != &head) {
-        Block *current_blk = container_of(node, Block, node);
-        if (current_blk->block_no == block_no) {
-            printk("Found block No. %llu\n", current_blk->block_no);
-            blk = current_blk;
-
-            // Move node to front of the list, so that the list is ordered by access time (LRU)
-            _detach_from_list(&current_blk->node);
-            _insert_into_list(&head, &current_blk->node);
-            break;
-        }
-
-        node = node->next;
-    }
-    release_spinlock(&lock);
+    Block *blk = try_find_block(block_no);
 
     // Cache block not found, read from disk
     if (!blk) {
-        if(get_num_cached_blocks() >= EVICTION_THRESHOLD){
+        if (get_num_cached_blocks() >= EVICTION_THRESHOLD) {
             cache_evict();
         }
 
-        printk("Initing block No. %llu\n", block_no);
-        blk = (Block*)kalloc(sizeof(Block));
+        // printk("Initing block No. %llu\n", block_no);
+        blk = (Block *)kalloc(sizeof(Block));
         init_block(blk);
         blk->block_no = block_no;
         device_read(blk);
         blk->valid = true;
+        blk->acquired = true;
 
         increment_rc(&num_cached_blocks);
-        insert_into_list(&lock, &head, &blk->node);
-    }
-
-    if(!acquire_sleeplock(&blk->lock)){
-        return NULL;
+        _insert_into_list(&head, &blk->node);
     }
     blk->acquired = true;
+    release_spinlock(&lock);
+
+    if (!acquire_sleeplock(&blk->lock)) {
+        return NULL;
+    }
 
     return blk;
 }
@@ -193,8 +199,34 @@ static Block *cache_acquire(usize block_no)
 // see `cache.h`.
 static void cache_release(Block *block)
 {
-    block->acquired = false;
     release_sleeplock(&block->lock);
+
+    acquire_spinlock(&lock);
+    block->acquired = false;
+    // Move node to front of the list, so that it is recycled in time order (LRU)
+    _detach_from_list(&block->node);
+    _insert_into_list(&head, &block->node);
+    release_spinlock(&lock);
+}
+
+void commit_log()
+{
+    // printk("Commiting log, number of blocks is %d\n", header.num_blocks);
+
+    for (u64 i = 0; i < header.num_blocks; i++) {
+        // Read data from log section
+        Block log_blk;
+        log_blk.block_no = sblock->log_start + i + 1;
+        device_read(&log_blk);
+
+        // Write to the actual place to store it
+        log_blk.block_no = header.block_no[i];
+        device_write(&log_blk);
+    }
+
+    // Modify metadata and write log into disk
+    header.num_blocks = 0;
+    write_header();
 }
 
 // see `cache.h`.
@@ -205,22 +237,65 @@ void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device)
 
     // TODO
     init_spinlock(&lock);
+    init_spinlock(&log.lock);
+    init_sem(&log.sem, 1);
     init_rc(&num_cached_blocks);
     init_list_node(&head);
+
+    log.committing = false;
+    log.num_ops = 0;
+
+    read_header();
+    if (header.num_blocks > 0) {
+        commit_log();
+    }
 }
 
 // see `cache.h`.
 static void cache_begin_op(OpContext *ctx)
 {
     // TODO
+    acquire_spinlock(&log.lock);
+    while (log.committing ||
+           (log.num_ops + 1) * OP_MAX_NUM_BLOCKS > LOG_MAX_SIZE) {
+        release_spinlock(&log.lock);
+        // Process already killed, no op required any more
+        if (!wait_sem(&log.sem)) {
+            return;
+        }
+        acquire_spinlock(&log.lock);
+    }
+
+    log.num_ops++;
+    ctx->rm = OP_MAX_NUM_BLOCKS;
+    // ctx->ts = get_timestamp();
+    release_spinlock(&log.lock);
 }
 
 // see `cache.h`.
 static void cache_sync(OpContext *ctx, Block *block)
 {
     // TODO
-    if(!ctx){
+    if (!ctx) {
         device_write(block);
+    } else {
+        acquire_spinlock(&log.lock);
+
+        // Skip blocks that are already marked as dirty
+        if(block->pinned){
+            release_spinlock(&log.lock);
+            return;
+        }
+
+        if (ctx->rm <= 0) {
+            PANIC();
+        }
+        ctx->rm--;
+
+        // Pin block and write header
+        block->pinned = true;
+        header.block_no[header.num_blocks++] = block->block_no;
+        release_spinlock(&log.lock);
     }
 }
 
@@ -228,6 +303,46 @@ static void cache_sync(OpContext *ctx, Block *block)
 static void cache_end_op(OpContext *ctx)
 {
     // TODO
+    acquire_spinlock(&log.lock);
+    if (log.committing) {
+        // Calling end op while still commiting shall not happen
+        PANIC();
+    }
+
+    log.num_ops--;
+    if (log.num_ops > 0) {
+        // There are still ops that haven't finished, do not commit
+        // But we can call wake up `begin_op`s
+        post_all_sem(&log.sem);
+        release_spinlock(&log.lock);
+        return;
+    }
+
+    log.committing = true;
+    release_spinlock(&log.lock);
+
+    // Write data into log
+    for (u64 i = 0; i < header.num_blocks; i++) {
+        // Read data from log section
+        acquire_spinlock(&lock);
+        Block *blk = try_find_block(header.block_no[i]);
+        if (!blk) {
+            PANIC();
+        }
+
+        // Write to the actual place to store it
+        device->write(sblock->log_start + i + 1, blk->data);
+        blk->pinned = false;
+        release_spinlock(&lock);
+    }
+
+    write_header();
+    commit_log();
+
+    acquire_spinlock(&log.lock);
+    log.committing = false;
+    post_all_sem(&log.sem);
+    release_spinlock(&log.lock);
 }
 
 // see `cache.h`.
