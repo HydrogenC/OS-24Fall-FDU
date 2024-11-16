@@ -282,13 +282,14 @@ void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device)
 static void cache_begin_op(OpContext *ctx)
 {
     // TODO
-    if(!ctx){
+    if (!ctx) {
         PANIC();
     }
 
     acquire_spinlock(&log.lock);
     while (log.committing ||
-           (log.num_ops + 1) * OP_MAX_NUM_BLOCKS > LOG_MAX_SIZE) {
+           header.num_blocks + (log.num_ops + 1) * OP_MAX_NUM_BLOCKS >
+                   LOG_MAX_SIZE) {
         release_spinlock(&log.lock);
         // Process already killed, no op required any more
         // printk("Begin op waiting...\n");
@@ -335,6 +336,10 @@ static void cache_sync(OpContext *ctx, Block *block)
 static void cache_end_op(OpContext *ctx)
 {
     // TODO
+    if(!ctx){
+        PANIC();
+    }
+
     acquire_spinlock(&log.lock);
     if (log.committing) {
         // Calling end op while still commiting shall not happen
@@ -344,7 +349,8 @@ static void cache_end_op(OpContext *ctx)
     log.num_ops--;
     if (log.num_ops > 0) {
         // There are still ops that haven't finished, do not commit
-        // But we can call wake up `begin_op`s
+        // But we can call wake up those awaiting `begin_op`s, 
+        // since there's an updated estimation of empty log spaces
         post_all_sem(&log.sem);
         // printk("Ended op, remaining %d\n", log.num_ops);
         release_spinlock(&log.lock);
@@ -367,7 +373,7 @@ static void cache_end_op(OpContext *ctx)
 void __debug_print_bitmap_block(Block *bitmap_block)
 {
     for (usize j = 0; j < BLOCK_SIZE; j += 8) {
-        u64 *num = &(bitmap_block->data[j]);
+        u64 *num = (u64*)&(bitmap_block->data[j]);
         printk("%llu ", *num);
     }
     printk("\n");
@@ -415,7 +421,8 @@ static usize cache_alloc(OpContext *ctx)
 // see `cache.h`.
 static void cache_free(OpContext *ctx, usize block_no)
 {
-    const usize bitmap_block_no = sblock->bitmap_start + block_no / BIT_PER_BLOCK;
+    const usize bitmap_block_no =
+            sblock->bitmap_start + block_no / BIT_PER_BLOCK;
     // printk("Freeing block %d\n", block_no);
     Block *bitmap_block = cache_acquire(bitmap_block_no);
 
