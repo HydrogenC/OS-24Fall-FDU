@@ -125,23 +125,27 @@ void __walk_cache_list()
 }
 
 // Evict one cache block, typically the last element in list
-static int cache_evict()
+static void cache_evict()
 {
     ListNode *node = head.prev;
 
     // Inverse traverse, find the cache that is used least recently (LRU)
     while (node != &head) {
         Block *current_blk = container_of(node, Block, node);
+        node = node->prev;
+
         // Skip acquired and pinned blocks
         if (!current_blk->acquired && !current_blk->pinned) {
             // printk("Evicting block No. %llu\n", current_blk->block_no);
             _detach_from_list(&current_blk->node);
             decrement_rc(&num_cached_blocks);
             kfree(current_blk);
-            break;
-        }
 
-        node = node->prev;
+            // Keep evicting until below threshold
+            if (num_cached_blocks.count < EVICTION_THRESHOLD) {
+                break;
+            }
+        }
     }
 }
 
@@ -246,9 +250,7 @@ void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device)
     log.num_ops = 0;
 
     read_header();
-    if (header.num_blocks > 0) {
-        commit_log();
-    }
+    commit_log();
 }
 
 // see `cache.h`.
@@ -314,23 +316,25 @@ static void cache_end_op(OpContext *ctx)
         // There are still ops that haven't finished, do not commit
         // But we can call wake up `begin_op`s
         post_all_sem(&log.sem);
+        // printk("Ended op, remaining %d\n", log.num_ops);
         release_spinlock(&log.lock);
         return;
     }
 
     log.committing = true;
+    // printk("Ended op, Writing to disk\n", log.num_ops);
     release_spinlock(&log.lock);
 
     // Write data into log
     for (u64 i = 0; i < header.num_blocks; i++) {
-        // Read data from log section
+        // Read data from cache
         acquire_spinlock(&lock);
         Block *blk = try_find_block(header.block_no[i]);
         if (!blk) {
             PANIC();
         }
 
-        // Write to the actual place to store it
+        // Write to log area
         device->write(sblock->log_start + i + 1, blk->data);
         blk->pinned = false;
         release_spinlock(&lock);
@@ -396,8 +400,7 @@ static usize cache_alloc(OpContext *ctx)
 // see `cache.h`.
 static void cache_free(OpContext *ctx, usize block_no)
 {
-    const bitmap_block_no =
-            sblock->bitmap_start + block_no / BIT_PER_BLOCK;
+    const bitmap_block_no = sblock->bitmap_start + block_no / BIT_PER_BLOCK;
     // printk("Freeing block %d\n", block_no);
     Block *bitmap_block = cache_acquire(bitmap_block_no);
 
