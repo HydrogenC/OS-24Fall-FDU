@@ -282,7 +282,7 @@ static void cache_sync(OpContext *ctx, Block *block)
         acquire_spinlock(&log.lock);
 
         // Skip blocks that are already marked as dirty
-        if(block->pinned){
+        if (block->pinned) {
             release_spinlock(&log.lock);
             return;
         }
@@ -345,16 +345,67 @@ static void cache_end_op(OpContext *ctx)
     release_spinlock(&log.lock);
 }
 
+void __debug_print_bitmap_block(Block *bitmap_block)
+{
+    for (usize j = 0; j < BLOCK_SIZE; j += 8) {
+        u64 *num = &(bitmap_block->data[j]);
+        printk("%llu ", *num);
+    }
+    printk("\n");
+}
+
 // see `cache.h`.
 static usize cache_alloc(OpContext *ctx)
 {
     // TODO
+    if (!ctx) {
+        PANIC();
+    }
+
+    Block *bitmap_block;
+    for (usize i = 0; i < sblock->num_blocks; i += BIT_PER_BLOCK) {
+        const usize bitmap_block_no = sblock->bitmap_start + i / BIT_PER_BLOCK;
+        bitmap_block = cache_acquire(bitmap_block_no);
+
+        for (usize j = 0; j < BIT_PER_BLOCK && i + j < sblock->num_blocks;
+             j++) {
+            u8 probe = 1u << (j % 8u);
+            // If block is free
+            if ((bitmap_block->data[j / 8] & probe) == 0) {
+                bitmap_block->data[j / 8] |= probe;
+                cache_sync(ctx, bitmap_block);
+                cache_release(bitmap_block);
+                usize block_no = i + j;
+
+                // Use buffer as a zero-buffer to clear the block
+                u8 zero_buffer[BLOCK_SIZE];
+                memset(zero_buffer, 0, BLOCK_SIZE);
+                device->write(block_no, zero_buffer);
+                // printk("Allocating block %d\n", block_no);
+                return block_no;
+            }
+        }
+
+        cache_release(bitmap_block);
+    }
+
+    printk("PANIC: No free block remaining. \n");
+    PANIC();
 }
 
 // see `cache.h`.
 static void cache_free(OpContext *ctx, usize block_no)
 {
-    // TODO
+    const bitmap_block_no =
+            sblock->bitmap_start + block_no / BIT_PER_BLOCK;
+    // printk("Freeing block %d\n", block_no);
+    Block *bitmap_block = cache_acquire(bitmap_block_no);
+
+    usize in_block_index = block_no % BIT_PER_BLOCK;
+    u8 probe = 1u << (in_block_index % 8u);
+    bitmap_block->data[in_block_index / 8] &= ~probe;
+    cache_sync(ctx, bitmap_block);
+    cache_release(bitmap_block);
 }
 
 BlockCache bcache = {
