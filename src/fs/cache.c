@@ -213,8 +213,33 @@ static void cache_release(Block *block)
     release_spinlock(&lock);
 }
 
+// Write pending data from memory to log
 void commit_log()
 {
+    // Write data into log
+    for (u64 i = 0; i < header.num_blocks; i++) {
+        // Read data from cache
+        acquire_spinlock(&lock);
+        Block *blk = try_find_block(header.block_no[i]);
+        if (!blk) {
+            PANIC();
+        }
+
+        // Write to log area
+        device->write(sblock->log_start + i + 1, blk->data);
+        blk->pinned = false;
+        release_spinlock(&lock);
+    }
+
+    write_header();
+}
+
+// Transfer pending data in log to their actual destination
+void commit_data()
+{
+    if (header.num_blocks == 0) {
+        return;
+    }
     // printk("Commiting log, number of blocks is %d\n", header.num_blocks);
 
     for (u64 i = 0; i < header.num_blocks; i++) {
@@ -250,18 +275,23 @@ void init_bcache(const SuperBlock *_sblock, const BlockDevice *_device)
     log.num_ops = 0;
 
     read_header();
-    commit_log();
+    commit_data();
 }
 
 // see `cache.h`.
 static void cache_begin_op(OpContext *ctx)
 {
     // TODO
+    if(!ctx){
+        PANIC();
+    }
+
     acquire_spinlock(&log.lock);
     while (log.committing ||
            (log.num_ops + 1) * OP_MAX_NUM_BLOCKS > LOG_MAX_SIZE) {
         release_spinlock(&log.lock);
         // Process already killed, no op required any more
+        // printk("Begin op waiting...\n");
         if (!wait_sem(&log.sem)) {
             return;
         }
@@ -322,27 +352,12 @@ static void cache_end_op(OpContext *ctx)
     }
 
     log.committing = true;
-    // printk("Ended op, Writing to disk\n", log.num_ops);
     release_spinlock(&log.lock);
 
-    // Write data into log
-    for (u64 i = 0; i < header.num_blocks; i++) {
-        // Read data from cache
-        acquire_spinlock(&lock);
-        Block *blk = try_find_block(header.block_no[i]);
-        if (!blk) {
-            PANIC();
-        }
-
-        // Write to log area
-        device->write(sblock->log_start + i + 1, blk->data);
-        blk->pinned = false;
-        release_spinlock(&lock);
-    }
-
-    write_header();
     commit_log();
+    // printk("Committing group of size %d. \n", header.num_blocks);
 
+    commit_data();
     acquire_spinlock(&log.lock);
     log.committing = false;
     post_all_sem(&log.sem);
@@ -400,7 +415,7 @@ static usize cache_alloc(OpContext *ctx)
 // see `cache.h`.
 static void cache_free(OpContext *ctx, usize block_no)
 {
-    const bitmap_block_no = sblock->bitmap_start + block_no / BIT_PER_BLOCK;
+    const usize bitmap_block_no = sblock->bitmap_start + block_no / BIT_PER_BLOCK;
     // printk("Freeing block %d\n", block_no);
     Block *bitmap_block = cache_acquire(bitmap_block_no);
 
