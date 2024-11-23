@@ -258,28 +258,27 @@ static Inode *inode_share(Inode *inode)
 static void inode_put(OpContext *ctx, Inode *inode)
 {
     // TODO
-    if (!acquire_sleeplock(&inode->lock)) {
-        return;
+    if (!inode->valid) {
+        inode_sync(ctx, inode, false);
     }
 
-    // Clear the inode if no num_links
-    if (inode->valid && inode->entry.num_links == 0) {
-        inode_clear(ctx, inode);
-        // Set inode entry as unused
-        inode->entry.type = 0;
-        inode_sync(ctx, inode, true);
-        inode->valid = false;
-    }
-
-    release_sleeplock(&inode->lock);
-
-    // If no remaining references, then free the inode itself
     acquire_spinlock(&lock);
     decrement_rc(&inode->rc);
     if (inode->rc.count == 0) {
+        // Clear the inode if no num_links
+        if (inode->entry.num_links == 0) {
+            inode_clear(ctx, inode);
+            // Set inode entry as unused
+            inode->entry.type = 0;
+            inode_sync(ctx, inode, true);
+            inode->valid = false;
+        }
+
+        // If no remaining references, then free the inode itself
         _detach_from_list(&inode->node);
         kfree(inode);
     }
+
     release_spinlock(&lock);
 }
 
@@ -310,6 +309,7 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
 {
     // TODO
     // Within direct blocks
+    *modified = false;
     if (offset < BLOCK_SIZE * INODE_NUM_DIRECT) {
         u32 block_index = offset / BLOCK_SIZE;
         if (inode->entry.addrs[block_index] == 0) {
@@ -499,7 +499,8 @@ static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
     u32 entry_offset = 0;
     for (; entry_offset < inode->entry.num_bytes;
          entry_offset += sizeof(DirEntry)) {
-        usize read_size = inode_read(inode, &dir_entry, entry_offset, sizeof(DirEntry));
+        usize read_size =
+                inode_read(inode, &dir_entry, entry_offset, sizeof(DirEntry));
         ASSERT(read_size == sizeof(DirEntry));
 
         // Empty item
