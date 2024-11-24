@@ -221,6 +221,7 @@ static void inode_clear(OpContext *ctx, Inode *inode)
     u32 *direct_addrs = inode->entry.addrs;
     for (u64 i = 0; i < INODE_NUM_DIRECT; i++) {
         if (direct_addrs[i]) {
+            // printk("Freeing direct data block %d\n", direct_addrs[i]);
             cache->free(ctx, direct_addrs[i]);
             direct_addrs[i] = 0;
         }
@@ -232,13 +233,14 @@ static void inode_clear(OpContext *ctx, Inode *inode)
         u32 *indirect_addrs = get_addrs(indirect_blk);
         for (u64 i = 0; i < INODE_NUM_INDIRECT; i++) {
             if (indirect_addrs[i]) {
+                // printk("Freeing indirect data block %d\n", indirect_addrs[i]);
                 cache->free(ctx, indirect_addrs[i]);
                 indirect_addrs[i] = 0;
             }
         }
 
         cache->release(indirect_blk);
-        cache->free(ctx, indirect_blk);
+        cache->free(ctx, inode->entry.indirect);
         inode->entry.indirect = 0;
     }
 
@@ -315,7 +317,6 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
         if (inode->entry.addrs[block_index] == 0) {
             // No `ctx`, cannot alloc
             if (!ctx) {
-                *modified = false;
                 printk("(warn) inode_map: no ctx, cannot create direct data block.\n");
                 return 0;
             }
@@ -327,12 +328,11 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
     }
 
     // Within indirect block
-    offset -= BLOCK_SIZE - INODE_NUM_DIRECT;
+    offset -= BLOCK_SIZE * INODE_NUM_DIRECT;
     if (offset < BLOCK_SIZE * INODE_NUM_INDIRECT) {
         // No indirect block, try alloc
         if (inode->entry.indirect == 0) {
             if (!ctx) {
-                *modified = false;
                 printk("(warn) inode_map: no ctx, cannot create indirect table block.\n");
                 return 0;
             }
@@ -347,14 +347,12 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
         u32 *indirect_addrs = get_addrs(indirect_blk);
         if (indirect_addrs[block_index] == 0) {
             if (!ctx) {
-                *modified = false;
                 printk("(warn) inode_map: no ctx, cannot create indirect data block.\n");
                 return 0;
             }
 
             indirect_addrs[block_index] = cache->alloc(ctx);
             cache->sync(ctx, indirect_blk);
-            *modified = true;
         }
 
         cache->release(indirect_blk);
@@ -388,6 +386,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
         // Cannot read current data block
         if (data_blk_no == 0) {
             // Terminate read and return bytes already read
+            printk("(warn) cannot write data block, aborting. \n");
             return pos - offset;
         }
 
@@ -396,8 +395,12 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
         u32 read_count = min(BLOCK_SIZE - pos_in_block, end - pos);
         memcpy(dest, &data_blk->data[pos_in_block], read_count);
 
+        // printk("Read %d bytes from block %d at pos %d\n", read_count,
+        //        data_blk_no, pos);
+
         cache->release(data_blk);
         pos += read_count;
+        dest += read_count;
     }
 
     return pos - offset;
@@ -418,10 +421,14 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
     while (pos < end) {
         bool modified;
         u32 data_blk_no = inode_map(ctx, inode, pos, &modified);
+        if (modified) {
+            inode_sync(ctx, inode, true);
+        }
 
         // Cannot read current data block
         if (data_blk_no == 0) {
             // Terminate read and return bytes already read
+            printk("(warn) cannot write data block, aborting. \n");
             return pos - offset;
         }
 
@@ -430,9 +437,13 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
         u32 write_count = min(BLOCK_SIZE - pos_in_block, end - pos);
         memcpy(&data_blk->data[pos_in_block], src, write_count);
 
+        // printk("Written %d bytes to block %d at pos %d\n", write_count,
+        //        data_blk_no, pos);
+
         cache->sync(ctx, data_blk);
         cache->release(data_blk);
         pos += write_count;
+        src += write_count;
     }
 
     // If appended, modify size
@@ -470,7 +481,9 @@ static usize inode_lookup(Inode *inode, const char *name, usize *index)
 
         // File name is correct
         if (strncmp(name, dir_entry.name, len_entry_name) == 0) {
-            *index = i / sizeof(DirEntry);
+            if (index) {
+                *index = i / sizeof(DirEntry);
+            }
             return dir_entry.inode_no;
         }
     }
@@ -521,7 +534,18 @@ static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
 // see `inode.h`.
 static void inode_remove(OpContext *ctx, Inode *inode, usize index)
 {
+    InodeEntry *entry = &inode->entry;
+    ASSERT(entry->type == INODE_DIRECTORY);
+
     // TODO
+    DirEntry dir_entry;
+    usize read_size = inode_read(inode, &dir_entry, index, sizeof(DirEntry));
+    ASSERT(read_size == sizeof(DirEntry));
+
+    if(dir_entry.inode_no != 0){
+        // TODO: Remove the inode itself if applicable, but not necessary in this lab
+        dir_entry.inode_no = 0;
+    }
 }
 
 InodeTree inodes = {
