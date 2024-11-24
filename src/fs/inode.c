@@ -539,12 +539,13 @@ static void inode_remove(OpContext *ctx, Inode *inode, usize index)
 
     // TODO
     DirEntry dir_entry;
-    usize read_size = inode_read(inode, &dir_entry, index, sizeof(DirEntry));
+    usize read_size = inode_read(inode, &dir_entry, index * sizeof(DirEntry), sizeof(DirEntry));
     ASSERT(read_size == sizeof(DirEntry));
 
     if(dir_entry.inode_no != 0){
-        // TODO: Remove the inode itself if applicable, but not necessary in this lab
+        // TODO: Remove the inode of `inode_no` if applicable, but this is not necessary in this lab
         dir_entry.inode_no = 0;
+        inode_write(ctx, inode, &dir_entry, index * sizeof(DirEntry), sizeof(DirEntry));
     }
 }
 
