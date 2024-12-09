@@ -4,6 +4,7 @@
 #include <driver/memlayout.h>
 #include <kernel/mem.h>
 #include <kernel/printk.h>
+#include <common/string.h>
 
 // Reference: https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
 #define ALIGN_UP_PTR(addr, size) (void *)(((usize)addr + (size - 1)) & (-size))
@@ -16,6 +17,7 @@ static SpinLock page_lock, block_lock;
 
 extern char end[];
 static char *pages_base;
+static void *zero_page = NULL;
 
 // TODO: This shouldn't be hardcoded
 #define MAX_PAGE_COUNT 262000
@@ -48,7 +50,7 @@ void init_pages()
 
     // Stop addr in kernel space
     int index = 0;
-    char *kernel_stop = (char*)P2K(PHYSTOP);
+    char *kernel_stop = (char *)P2K(PHYSTOP);
     for (char *i = pages_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
 
@@ -93,7 +95,7 @@ void *kalloc_page()
     }
     p_page->next = p_page->prev = NULL;
 
-    u32 page_index = ((char*)p_page - pages_base) / PAGE_SIZE;
+    u32 page_index = ((char *)p_page - pages_base) / PAGE_SIZE;
     ASSERT(pages[page_index].ref.count == 0);
     increment_rc(&pages[page_index].ref);
 
@@ -107,14 +109,18 @@ void kfree_page(void *p)
 {
     // Insert into free list
     acquire_spinlock(&page_lock);
-    u32 page_index = ((char*)p - pages_base) / PAGE_SIZE;
+
+    u32 page_index = ((char *)p - pages_base) / PAGE_SIZE;
     ASSERT(pages[page_index].ref.count > 0);
     decrement_rc(&pages[page_index].ref);
     // Not the last user of this page, just return
-    if(pages[page_index].ref.count > 0){
+    if (pages[page_index].ref.count > 0) {
         release_spinlock(&page_lock);
         return;
     }
+
+    // Zero page shouldn't have been cleaned
+    ASSERT(p != zero_page);
 
     page_header *p_page = p;
     if (free_list) {
@@ -271,8 +277,8 @@ void *kalloc(unsigned long long size)
     }
 
     if (p_page->tier != tier) {
-        printk("PANIC: tier mismatch, wanted %d, given %d\n",
-            tier, p_page->tier);
+        printk("PANIC: tier mismatch, wanted %d, given %d\n", tier,
+               p_page->tier);
     }
 
     void *addr = p_page->free_block;
@@ -318,4 +324,19 @@ void kfree(void *ptr)
 
     release_spinlock(&block_lock);
     return;
+}
+
+WARN_RESULT void *get_zero_page()
+{
+    // TODO
+    if (!zero_page) {
+        zero_page = kalloc_page();
+        memset(zero_page, 0, PAGE_SIZE);
+
+        // Set rc to a very large number to ensure that this page will never be freed
+        u32 page_index = ((char *)zero_page - pages_base) / PAGE_SIZE;
+        pages[page_index].ref.count = __INT_MAX__;
+    }
+
+    return zero_page;
 }

@@ -40,9 +40,7 @@ PTEntriesPtr allocate_table(PTEntry* parent_level_pte)
     PTEntriesPtr new_page_table = kalloc_page();
     
     // Clear memory with zero
-    for (int i = 0; i < N_PTE_PER_TABLE; i++){
-        new_page_table[i] &= 0x0;
-    }
+    memset(new_page_table, 0, PAGE_SIZE);
 
     // Write physical address to parent level page table if applicable
     if (parent_level_pte) {
@@ -113,9 +111,23 @@ PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc)
 
 void init_pgdir(struct pgdir *pgdir)
 {
-    pgdir->pt = NULL;
     init_spinlock(&pgdir->lock);
     init_list_node(&pgdir->section_head);
+
+    // Init root table
+    pgdir->pt = kalloc_page();
+    memset(pgdir->pt, 0, PAGE_SIZE);
+
+    // Init HEAP segment
+    struct section *heap_section =
+            (struct section *)kalloc(sizeof(struct section));
+    // Heap with arbitrary start position, size is 0
+    heap_section->flags = ST_HEAP;
+    heap_section->begin = 0x0;
+    heap_section->end = heap_section->begin;
+    init_list_node(&heap_section->stnode);
+    insert_into_list(&pgdir->lock, &pgdir->section_head,
+                     &heap_section->stnode);
 }
 
 void free_pgdir(struct pgdir *pgdir)
@@ -164,4 +176,30 @@ void attach_pgdir(struct pgdir *pgdir)
         arch_set_ttbr0(K2P(pgdir->pt));
     else
         arch_set_ttbr0(K2P(&invalid_pt));
+}
+
+
+void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
+{
+    // TODO
+    // Map virtual address 'va' to the physical address represented by kernel
+    // address 'ka' in page directory 'pd', 'flags' is the flags for the page
+    // table entry
+
+    ASSERT(va % PAGE_SIZE == 0);
+    ASSERT((u64)ka % PAGE_SIZE == 0);
+
+    PTEntriesPtr pte = get_pte(pd, va, true);
+    ASSERT(pte != NULL);
+
+    // Free the original page if there is
+    if ((*pte) & 0x1) {
+        void* old_page = (void*)P2K(PTE_ADDRESS(*pte));
+        kfree_page(old_page);
+    }
+
+    *pte = K2P(ka) | flags;
+
+    // Flush tlb to avoid strange bugs
+    arch_tlbi_vmalle1is();
 }

@@ -7,6 +7,7 @@
 #include <common/string.h>
 #include <common/rc.h>
 #include <kernel/printk.h>
+#include "proc.h"
 
 Proc root_proc;
 int pid = 0, pid_limit = 65536;
@@ -168,7 +169,7 @@ int wait(int *exitcode)
     release_spinlock(&proc_lock);
 
     // printk("Proc{pid=%d} waiting for children. \n", this->pid);
-    if(!wait_sem(&this->childexit)){
+    if (!wait_sem(&this->childexit)) {
         // Proc killed, return directly
         return -1;
     }
@@ -179,7 +180,7 @@ int wait(int *exitcode)
     child = child->next;
     while (child != &this->children) {
         Proc *child_proc = container_of(child, Proc, ptnode);
-        // `is_zombie` waits for sched_lock, so that it can be ensured that `sched` has finished. 
+        // `is_zombie` waits for sched_lock, so that it can be ensured that `sched` has finished.
         if (is_zombie(child_proc)) {
             *exitcode = child_proc->exitcode;
             int child_pid = child_proc->pid;
@@ -214,7 +215,7 @@ NO_RETURN void exit(int code)
 
     this->exitcode = code;
     acquire_spinlock(&proc_lock);
-    
+
     // Notify listeners of child exit
     // printk("CPU %lld: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
@@ -294,7 +295,7 @@ int kill(int pid)
         return -1;
     }
 
-    if(proc->state == UNUSED){
+    if (proc->state == UNUSED) {
         return -1;
     }
 
@@ -303,4 +304,32 @@ int kill(int pid)
     release_spinlock(&proc_lock);
     // printk("Killing proc %d with state %d. \n", proc->pid, proc->state);
     return 0;
+}
+
+u64 sbrk(i64 size)
+{
+    Proc *this = thisproc();
+
+    ListNode *node = this->pgdir.section_head.next;
+    // Look for heap section
+    while (node != &this->pgdir.section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+        // This section is heap
+        if (section->flags & ST_HEAP) {
+            // Invalid size
+            if (section->end + size < section->begin) {
+                printk("Warning: invalid heap shrinking size\n");
+                return -1;
+            }
+
+            u64 original_end = section->end;
+            section->end += size;
+            return original_end;
+        }
+
+        node = node->next;
+    }
+
+    printk("Warning: proc %d has no heap section\n", this->pid);
+    PANIC();
 }
