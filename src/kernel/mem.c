@@ -15,7 +15,15 @@ RefCount kalloc_page_cnt;
 static SpinLock page_lock, block_lock;
 
 extern char end[];
-static char *heap_base;
+static char *pages_base;
+
+// TODO: This shouldn't be hardcoded
+#define MAX_PAGE_COUNT 262000
+struct page {
+    RefCount ref;
+};
+
+static struct page pages[MAX_PAGE_COUNT];
 
 // Block sizes, in bytes
 const int block_sizes[] = { 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
@@ -36,26 +44,28 @@ static page_header *partial_list[9] = { NULL };
 
 void init_pages()
 {
-    heap_base = ALIGN_UP_PTR(end, PAGE_SIZE);
+    pages_base = ALIGN_UP_PTR(end, PAGE_SIZE);
 
     // Stop addr in kernel space
-    int counter = 0;
+    int index = 0;
     char *kernel_stop = (char*)P2K(PHYSTOP);
-    for (char *i = heap_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
+    for (char *i = pages_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
 
         if (free_list) {
             free_list->prev = p_header;
         }
-        // p_header->id = counter;
+        // p_header->id = index;
         // p_header->allocated = false;
         p_header->next = free_list;
         free_list = p_header;
-        counter++;
+
+        init_rc(&pages[index].ref);
+        index++;
     }
 
-    // printk("Page start addr: %llu, registered pages: %d\n", (usize)heap_base,
-    //        counter);
+    // printk("Page start addr: %llu, registered pages: %d\n", (usize)pages_base,
+    //        index);
     // printk("Size of header: %llu\n", sizeof(page_header));
 }
 
@@ -73,6 +83,7 @@ void *kalloc_page()
     acquire_spinlock(&page_lock);
     page_header *p_page = free_list;
     if (!p_page) {
+        release_spinlock(&page_lock);
         return NULL;
     }
 
@@ -81,6 +92,10 @@ void *kalloc_page()
         free_list->prev = NULL;
     }
     p_page->next = p_page->prev = NULL;
+
+    u32 page_index = ((char*)p_page - pages_base) / PAGE_SIZE;
+    ASSERT(pages[page_index].ref.count == 0);
+    increment_rc(&pages[page_index].ref);
 
     increment_rc(&kalloc_page_cnt);
     release_spinlock(&page_lock);
@@ -92,6 +107,15 @@ void kfree_page(void *p)
 {
     // Insert into free list
     acquire_spinlock(&page_lock);
+    u32 page_index = ((char*)p - pages_base) / PAGE_SIZE;
+    ASSERT(pages[page_index].ref.count > 0);
+    decrement_rc(&pages[page_index].ref);
+    // Not the last user of this page, just return
+    if(pages[page_index].ref.count > 0){
+        release_spinlock(&page_lock);
+        return;
+    }
+
     page_header *p_page = p;
     if (free_list) {
         free_list->prev = p_page;
