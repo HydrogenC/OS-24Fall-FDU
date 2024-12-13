@@ -344,8 +344,8 @@ u64 sbrk(i64 size)
 
         // Next page to the last page within heap after shrink
         u64 free_pages_start = PAGE_BASE((heap_section->end + (PAGE_SIZE - 1)));
-        // Last page within heap before shrink
-        u64 free_pages_end = PAGE_BASE(original_end);
+        // Last page within heap before shrink, minus one since `end` is exclusive
+        u64 free_pages_end = PAGE_BASE((original_end - 1));
         for (u64 page_addr = free_pages_start; page_addr <= free_pages_end;
              page_addr += PAGE_SIZE) {
             PTEntriesPtr pte = get_pte(&this->pgdir, page_addr, false);
