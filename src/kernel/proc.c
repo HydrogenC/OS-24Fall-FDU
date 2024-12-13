@@ -9,6 +9,8 @@
 #include <kernel/printk.h>
 #include "proc.h"
 
+#define ALIGN_UP_PTR(addr, size) (void *)(((usize)addr + (size - 1)) & (-size))
+
 Proc root_proc;
 int pid = 0, pid_limit = 65536;
 
@@ -311,25 +313,52 @@ u64 sbrk(i64 size)
     Proc *this = thisproc();
 
     ListNode *node = this->pgdir.section_head.next;
+    struct section *heap_section = NULL;
     // Look for heap section
     while (node != &this->pgdir.section_head) {
         struct section *section = container_of(node, struct section, stnode);
         // This section is heap
         if (section->flags & ST_HEAP) {
-            // Invalid size
-            if (section->end + size < section->begin) {
-                printk("Warning: invalid heap shrinking size\n");
-                return -1;
-            }
-
-            u64 original_end = section->end;
-            section->end += size;
-            return original_end;
+            heap_section = section;
+            break;
         }
 
         node = node->next;
     }
 
-    printk("Warning: proc %d has no heap section\n", this->pid);
-    PANIC();
+    if (heap_section == NULL) {
+        printk("Warning: proc %d has no heap section\n", this->pid);
+        return -1;
+    }
+
+    if (heap_section->end + size < heap_section->begin) {
+        printk("Warning: invalid heap shrinking size\n");
+        return -1;
+    }
+
+    u64 original_end = heap_section->end;
+    heap_section->end += size;
+
+    if (size < 0) {
+        // Free pages that are no longer used
+
+        // Next page to the last page within heap after shrink
+        u64 free_pages_start = PAGE_BASE((heap_section->end + (PAGE_SIZE - 1)));
+        // Last page within heap before shrink
+        u64 free_pages_end = PAGE_BASE(original_end);
+        for (u64 page_addr = free_pages_start; page_addr <= free_pages_end;
+             page_addr += PAGE_SIZE) {
+            PTEntriesPtr pte = get_pte(&this->pgdir, page_addr, false);
+            if (pte && (*pte) & 0x1) {
+                void *physical_page = (void *)P2K(PTE_ADDRESS(*pte));
+                kfree_page(physical_page);
+                *pte = 0;
+            }
+        }
+
+        // Flush tlb to avoid strange bugs
+        arch_tlbi_vmalle1is();
+    }
+
+    return original_end;
 }

@@ -194,6 +194,7 @@ void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
 
     // Free the original page if there is
     if ((*pte) & 0x1) {
+        // Kernel address of physical page
         void* old_page = (void*)P2K(PTE_ADDRESS(*pte));
         kfree_page(old_page);
     }

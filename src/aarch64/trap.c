@@ -132,7 +132,7 @@ void trap_global_handler(UserContext *context)
         break;
     case ESR_EC_DABORT_EL0:
     case ESR_EC_DABORT_EL1: {
-        printk("Page fault %llu\n", esr);
+        // printk("Page fault %llu\n", esr);
         // If failed to handle exception, just kill the process
         if (pgfault_handler(iss) == -1) {
             printk("Failed to handle page fault (esr=%lld), killing proc %d\n",

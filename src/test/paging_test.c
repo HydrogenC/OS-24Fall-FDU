@@ -53,7 +53,6 @@ void pgfault_first_test() {
         *(i64 *)addr = i;
         ASSERT(*(i64 *)addr == i);
         sbrk(-i * PAGE_SIZE);
-        printk("iteration %lld\n", i);
     }
     
     sbrk(limit * PAGE_SIZE);
@@ -73,7 +72,7 @@ void pgfault_first_test() {
         vmmap(pd, va, get_zero_page(), PTE_RO | PTE_USER_DATA);
         ASSERT(*(i64 *)va == 0);
     }
-    // ASSERT(pc == kalloc_page_cnt.count);
+    ASSERT(pc + 1 == kalloc_page_cnt.count);
     arch_tlbi_vmalle1is(); // WHY need this line
     for (i64 i = 0; i < limit; ++i) {
         u64 va = (u64)i * PAGE_SIZE;
