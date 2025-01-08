@@ -1,6 +1,22 @@
 #pragma once
 
 #include <aarch64/mmu.h>
+#include <common/spinlock.h>
+#include <common/list.h>
+
+#define ST_FILE  1                  // File-backed
+#define ST_SWAP  (1<<1)             // Unused
+#define ST_RO    (1<<2)             // Read-only
+#define ST_HEAP  (1<<3)             // Section is heap
+#define ST_TEXT  (ST_FILE | ST_RO)  // Section is text
+#define ST_DATA  ST_FILE            // Section is data
+#define ST_BSS   ST_FILE            // Section is bss
+
+struct section {
+    u64 flags;
+    u64 begin, end; // [begin, end)
+    ListNode stnode;
+};
 
 struct pgdir {
     PTEntriesPtr pt;

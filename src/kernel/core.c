@@ -3,6 +3,8 @@
 #include <kernel/printk.h>
 #include <kernel/sched.h>
 #include <test/test.h>
+#include <common/buf.h>
+#include <driver/virtio.h>
 
 volatile bool panic_flag;
 
@@ -15,7 +17,7 @@ NO_RETURN void idle_entry()
             break;
         arch_with_trap
         {
-            arch_wfi();
+            arch_wfe();
         }
     }
     set_cpu_off();
@@ -33,7 +35,17 @@ NO_RETURN void kernel_entry()
     // io_test();
 
     /* LAB 4 TODO 3 BEGIN */
-    
+    Buf buffer;
+    buffer.block_no = 0;
+    buffer.flags = 0;
+
+    virtio_blk_rw(&buffer);
+
+    u32* lba_part_2 = (u32*)&buffer.data[0x1CE + 0x8];
+    u32* numsec_part_2 = (u32*)&buffer.data[0x1CE + 0xC];
+
+    printk("LBA of partition 2 is %u. \n", *lba_part_2);
+    printk("Number of sectors of partition 2 is %u. \n", *numsec_part_2);
     /* LAB 4 TODO 3 END */
 
     /**
