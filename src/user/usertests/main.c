@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <fs/defines.h>
 
 char buf[8192];
 char name[3];

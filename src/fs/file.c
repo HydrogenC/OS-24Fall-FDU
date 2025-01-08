@@ -11,6 +11,7 @@ static struct ftable ftable;
 
 void init_ftable() {
     // TODO: initialize your ftable.
+    ASSERT(&ftable); // TO TEMPORORILY ELIMINATE ERROR
 }
 
 void init_oftable(struct oftable *oftable) {

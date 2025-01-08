@@ -12,12 +12,6 @@
 #define ST_DATA  ST_FILE            // Section is data
 #define ST_BSS   ST_FILE            // Section is bss
 
-struct section {
-    u64 flags;
-    u64 begin, end; // [begin, end)
-    ListNode stnode;
-};
-
 struct pgdir {
     PTEntriesPtr pt;
     SpinLock lock;

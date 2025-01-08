@@ -6,6 +6,7 @@
 #include <common/string.h>
 #include <kernel/mem.h>
 #include <kernel/pt.h>
+#include <kernel/paging.h>
 
 /*
 Reference: https://docs.kernel.org/arch/arm64/memory.html
@@ -188,6 +189,8 @@ void attach_pgdir(struct pgdir *pgdir)
  */
 void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
 {
+    /* (Final) TODO BEGIN */
+
     // TODO
     // Map virtual address 'va' to the physical address represented by kernel
     // address 'ka' in page directory 'pd', 'flags' is the flags for the page
@@ -210,6 +213,8 @@ void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
 
     // Flush tlb to avoid strange bugs
     arch_tlbi_vmalle1is();
+
+    /* (Final) TODO END */
 }
 
 /*

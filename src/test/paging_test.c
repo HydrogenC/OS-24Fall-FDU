@@ -4,6 +4,7 @@
 #include <common/sem.h>
 #include <common/string.h>
 #include <kernel/mem.h>
+#include <kernel/paging.h>
 #include <kernel/pt.h>
 #include <kernel/printk.h>
 #include <kernel/proc.h>

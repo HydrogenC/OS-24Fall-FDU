@@ -70,5 +70,3 @@ NO_RETURN void exit(int code);
 WARN_RESULT int wait(int *exitcode);
 WARN_RESULT int kill(int pid);
 WARN_RESULT int fork();
-
-u64 sbrk(i64 size);

@@ -5,6 +5,7 @@
 #include <kernel/mem.h>
 #include <kernel/printk.h>
 #include <common/string.h>
+#include "mem.h"
 
 // Reference: https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
 #define ALIGN_UP_PTR(addr, size) (void *)(((usize)addr + (size - 1)) & (-size))
@@ -14,6 +15,7 @@
 
 RefCount kalloc_page_cnt;
 static SpinLock page_lock, block_lock;
+static int total_page_cnt;
 
 extern char end[];
 static char *pages_base;
@@ -21,9 +23,6 @@ static void *zero_page = NULL;
 
 // TODO: This shouldn't be hardcoded
 #define MAX_PAGE_COUNT 262000
-struct page {
-    RefCount ref;
-};
 
 static struct page pages[MAX_PAGE_COUNT];
 
@@ -49,7 +48,6 @@ void init_pages()
     pages_base = ALIGN_UP_PTR(end, PAGE_SIZE);
 
     // Stop addr in kernel space
-    int index = 0;
     char *kernel_stop = (char *)P2K(PHYSTOP);
     for (char *i = pages_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
@@ -62,8 +60,7 @@ void init_pages()
         p_header->next = free_list;
         free_list = p_header;
 
-        init_rc(&pages[index].ref);
-        index++;
+        init_rc(&pages[total_page_cnt++].ref);
     }
 
     // printk("Page start addr: %llu, registered pages: %d\n", (usize)pages_base,
@@ -78,6 +75,11 @@ void kinit()
     init_spinlock(&block_lock);
 
     init_pages();
+}
+
+u64 left_page_cnt()
+{
+    return total_page_cnt - kalloc_page_cnt.count;
 }
 
 void *kalloc_page()

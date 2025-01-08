@@ -14,7 +14,7 @@
 struct section {
     u64 flags;
     u64 begin;
-    u64 end;
+    u64 end; // [begin, end)
     ListNode stnode;
 
     /* The following fields are for the file-backed sections. */
