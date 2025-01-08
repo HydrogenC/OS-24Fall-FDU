@@ -5,7 +5,6 @@
 #include <kernel/mem.h>
 #include <kernel/printk.h>
 #include <common/string.h>
-#include "mem.h"
 
 // Reference: https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
 #define ALIGN_UP_PTR(addr, size) (void *)(((usize)addr + (size - 1)) & (-size))
