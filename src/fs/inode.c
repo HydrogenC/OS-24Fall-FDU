@@ -523,12 +523,19 @@ static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
         }
     }
 
+    // Note: if there's no empty space, then `entry_offset` will be at the end position of inode,
+    // then the size of the directory inode would grow when calling `inode_write`
     dir_entry.inode_no = inode_no;
     // Ensure length does not exceed buffer
     ASSERT(strlen(name) <= FILE_NAME_MAX_LENGTH - 1);
     memcpy(dir_entry.name, name, strlen(name) + 1);
 
-    inode_write(ctx, inode, &dir_entry, entry_offset, sizeof(DirEntry));
+    // Test if write succeeds
+    if (inode_write(ctx, inode, &dir_entry, entry_offset, sizeof(DirEntry)) <
+        sizeof(DirEntry)) {
+        printk("PANIC: inode insertion failed due to write fault\n");
+        return -1;
+    }
     return entry_offset / sizeof(DirEntry);
 }
 
@@ -641,7 +648,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
     }
 
     path = skipelem(path, name);
-    while (path != NULL) {
+    while (path != 0) {
         // Load data into memory
         inode_lock(current);
 

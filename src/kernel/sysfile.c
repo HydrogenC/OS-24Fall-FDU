@@ -39,8 +39,13 @@ static struct file *fd2file(int fd)
     /* (Final) TODO BEGIN */
 
     Proc *this = thisproc();
-    File *file = this->oftable.files[fd];
 
+    // Avoid index out of bound
+    if (fd >= NFILE || fd < 0) {
+        return NULL;
+    }
+
+    File *file = this->oftable.files[fd];
     if (file == NULL || file->type == FD_NONE) {
         return NULL;
     }
@@ -144,6 +149,13 @@ define_syscall(close, int fd)
 {
     /* (Final) TODO BEGIN */
     File *f = fd2file(fd);
+
+    if (f == NULL) {
+        return -1;
+    }
+
+    thisproc()->oftable.files[fd] = 0;
+    file_close(f);
 
     /* (Final) TODO END */
     return 0;
@@ -283,8 +295,92 @@ Inode *create(const char *path, short type, short major, short minor,
 {
     /* (Final) TODO BEGIN */
 
+    char name[FILE_NAME_MAX_LENGTH];
+
+    Inode *parent = nameiparent(path, name, ctx);
+    // Parent dir not found
+    if (parent == NULL) {
+        return NULL;
+    }
+    inodes.lock(parent);
+
+    usize inode_index = inodes.lookup(parent, name, NULL);
+    if (inode_index > 0) {
+        inodes.unlock(parent);
+        inodes.put(ctx, parent);
+        Inode *target = inodes.get(inode_index);
+        inodes.lock(target);
+
+        // Check if type matches and if type is valid
+        if ((type == INODE_REGULAR || type == INODE_DIRECTORY) &&
+            type == target->entry.type) {
+            return target;
+        }
+
+        inodes.unlock(target);
+        inodes.put(ctx, target);
+        // Type mismatch or type invalid (only creating files and dirs are allowed)
+        return NULL;
+    }
+
+    inode_index = inodes.alloc(ctx, type);
+    if (inode_index == 0) {
+        printk("PANIC: failed to alloc inode\n");
+        inodes.unlock(parent);
+        inodes.put(ctx, parent);
+        return NULL;
+    }
+
+    Inode *target = inodes.get(inode_index);
+    inodes.lock(target);
+
+    target->entry.major = major;
+    target->entry.minor = minor;
+    target->entry.num_links = 1;
+    inodes.sync(ctx, target, true);
+
+    // Create `.` and `..`
+    if (type == INODE_DIRECTORY) {
+        if (inodes.insert(ctx, target, '.', target->inode_no) < 0 ||
+            inodes.insert(ctx, target, '..', parent->inode_no) < 0) {
+            printk("(warn) Failed to alloc . or ..\n");
+
+            // Deconstruct parent
+            inodes.unlock(parent);
+            inodes.put(ctx, parent);
+
+            // Deconstruct self
+            inodes.clear(ctx, target);
+            inodes.unlock(target);
+            inodes.put(ctx, target);
+            return NULL;
+        }
+
+        // Increment ref of parent due to `..`
+        parent->entry.num_links++;
+        inodes.sync(ctx, parent, true);
+
+        if (inodes.insert(ctx, parent, name, target->inode_no) < 0) {
+            printk("(warn) Failed to append new entry to parent\n");
+
+            // Deconstruct parent
+            inodes.unlock(parent);
+            inodes.put(ctx, parent);
+
+            // Deconstruct self
+            inodes.clear(ctx, target);
+            inodes.unlock(target);
+            inodes.put(ctx, target);
+            return NULL;
+        }
+    }
+
+    // Deconstruct parent
+    inodes.unlock(parent);
+    inodes.put(ctx, parent);
+    return target;
+
     /* (Final) TODO END */
-    return 0;
 }
 
 define_syscall(openat, int dirfd, const char *path, int omode)
@@ -396,6 +492,31 @@ define_syscall(chdir, const char *path)
      * You may need to do some validations.
      */
 
+    Proc* this = thisproc();
+
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+
+    Inode* inode = namei(path, &ctx);
+    if(inode == NULL){
+        bcache.end_op(&ctx);
+        return -1;
+    }
+
+    inodes.lock(inode);
+
+    // Must be directory
+    if(inode->entry.type != INODE_DIRECTORY){
+        bcache.end_op(&ctx);
+        return -1;
+    }
+
+    inodes.unlock(inode);
+    inodes.put(&ctx, this->cwd);
+    bcache.end_op(&ctx);
+
+    this->cwd = inode;
+    return 0;
     /* (Final) TODO END */
 }
 
