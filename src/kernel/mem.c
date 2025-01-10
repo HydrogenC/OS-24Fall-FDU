@@ -142,8 +142,6 @@ void kfree_page(void *p)
     return;
 }
 
-#define DEBUG_LINE printk("Line %d run\n", __LINE__)
-
 // Get full pages out of partial_list
 void remove_from_list(page_header *p_page)
 {

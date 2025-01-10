@@ -37,7 +37,16 @@ struct iovec {
 static struct file *fd2file(int fd)
 {
     /* (Final) TODO BEGIN */
-    
+
+    Proc *this = thisproc();
+    File *file = this->oftable.files[fd];
+
+    if (file == NULL || file->type == FD_NONE) {
+        return NULL;
+    }
+
+    return file;
+
     /* (Final) TODO END */
 }
 
@@ -48,7 +57,18 @@ static struct file *fd2file(int fd)
 int fdalloc(struct file *f)
 {
     /* (Final) TODO BEGIN */
-    
+
+    Proc *this = thisproc();
+    acquire_spinlock(&this->oftable.lock);
+    for (usize i = 0; i < NFILE; i++) {
+        if (this->oftable.files[i] == NULL) {
+            this->oftable.files[i] = f;
+            release_spinlock(&this->oftable.lock);
+            return i;
+        }
+    }
+    release_spinlock(&this->oftable.lock);
+
     /* (Final) TODO END */
     return -1;
 }
@@ -66,14 +86,14 @@ define_syscall(mmap, void *addr, int length, int prot, int flags, int fd,
                int offset)
 {
     /* (Final) TODO BEGIN */
-    
+
     /* (Final) TODO END */
 }
 
 define_syscall(munmap, void *addr, size_t length)
 {
     /* (Final) TODO BEGIN */
-    
+
     /* (Final) TODO END */
 }
 
@@ -123,7 +143,8 @@ define_syscall(writev, int fd, struct iovec *iov, int iovcnt)
 define_syscall(close, int fd)
 {
     /* (Final) TODO BEGIN */
-    
+    File *f = fd2file(fd);
+
     /* (Final) TODO END */
     return 0;
 }
@@ -261,7 +282,7 @@ Inode *create(const char *path, short type, short major, short minor,
               OpContext *ctx)
 {
     /* (Final) TODO BEGIN */
-    
+
     /* (Final) TODO END */
     return 0;
 }
@@ -374,14 +395,13 @@ define_syscall(chdir, const char *path)
      * Change the cwd (current working dictionary) of current process to 'path'.
      * You may need to do some validations.
      */
-    
+
     /* (Final) TODO END */
 }
 
 define_syscall(pipe2, int pipefd[2], int flags)
 {
-
     /* (Final) TODO BEGIN */
-    
+
     /* (Final) TODO END */
 }

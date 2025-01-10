@@ -17,7 +17,7 @@ NO_RETURN void idle_entry()
             break;
         arch_with_trap
         {
-            arch_wfe();
+            arch_wfi();
         }
     }
     set_cpu_off();
@@ -32,7 +32,7 @@ NO_RETURN void kernel_entry()
     // proc_test();
     // vm_test();
     // user_proc_test();
-    // io_test();
+    io_test();
 
     /* LAB 4 TODO 3 BEGIN */
     Buf buffer;
@@ -47,6 +47,10 @@ NO_RETURN void kernel_entry()
     printk("LBA of partition 2 is %u. \n", *lba_part_2);
     printk("Number of sectors of partition 2 is %u. \n", *numsec_part_2);
     /* LAB 4 TODO 3 END */
+
+    // TEMP CODE
+    while (1)
+        yield();
 
     /**
      * (Final) TODO BEGIN 

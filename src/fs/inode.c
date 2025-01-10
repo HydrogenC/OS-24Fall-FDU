@@ -3,6 +3,7 @@
 #include <kernel/mem.h>
 #include <kernel/printk.h>
 #include <fs/cache.h>
+#include <kernel/sched.h>
 
 #define min(a, b) (((a) > (b)) ? (b) : (a))
 
@@ -539,13 +540,15 @@ static void inode_remove(OpContext *ctx, Inode *inode, usize index)
 
     // TODO
     DirEntry dir_entry;
-    usize read_size = inode_read(inode, &dir_entry, index * sizeof(DirEntry), sizeof(DirEntry));
+    usize read_size = inode_read(inode, &dir_entry, index * sizeof(DirEntry),
+                                 sizeof(DirEntry));
     ASSERT(read_size == sizeof(DirEntry));
 
-    if(dir_entry.inode_no != 0){
+    if (dir_entry.inode_no != 0) {
         // TODO: Remove the inode of `inode_no` if applicable, but this is not necessary in this lab
         dir_entry.inode_no = 0;
-        inode_write(ctx, inode, &dir_entry, index * sizeof(DirEntry), sizeof(DirEntry));
+        inode_write(ctx, inode, &dir_entry, index * sizeof(DirEntry),
+                    sizeof(DirEntry));
     }
 }
 
@@ -579,8 +582,9 @@ InodeTree inodes = {
     skipelem("a", name) = "", setting name = "a",
     skipelem("", name) = skipelem("////", name) = NULL, not setting name.
  */
-static const char* skipelem(const char* path, char* name) {
-    const char* s;
+static const char *skipelem(const char *path, char *name)
+{
+    const char *s;
     int len;
 
     while (*path == '/')
@@ -621,22 +625,73 @@ static const char* skipelem(const char* path, char* name) {
     namex("/a/b", true, name) = inode of a, setting name = "b",
     namex("/", true, name) = NULL (because "/" has no parent!)
  */
-static Inode* namex(const char* path,
-                    bool nameiparent,
-                    char* name,
-                    OpContext* ctx) {
+static Inode *namex(const char *path, bool nameiparent, char *name,
+                    OpContext *ctx)
+{
     /* (Final) TODO BEGIN */
-    
+
+    Inode *current = NULL;
+
+    // Absolute path
+    if (path[0] == '/') {
+        current = inode_get(ROOT_INODE_NO);
+    } else {
+        // Increment rc when getting the path
+        current = inode_share(thisproc()->cwd);
+    }
+
+    path = skipelem(path, name);
+    while (path != NULL) {
+        // Load data into memory
+        inode_lock(current);
+
+        if (current->entry.type != INODE_DIRECTORY) {
+            inode_unlock(current);
+            inode_put(ctx, current);
+            printk("WARNING: Calling `namex` on non-directory inode! \n");
+            return NULL;
+        }
+
+        // `current` is already the dir being looked for
+        if (path[0] == '\0' && nameiparent) {
+            inode_unlock(current);
+            return current;
+        }
+
+        // Find next level
+        usize next_no = inode_lookup(current, name, NULL);
+        if (next_no <= 0) {
+            inode_unlock(current);
+            inode_put(ctx, current);
+            printk("WARNING: Next dir `%s` not found! \n", name);
+            return NULL;
+        }
+
+        Inode *next = inode_get(next_no);
+        // This shall not fail since the inode_no has already proved to be valid
+        ASSERT(next != NULL);
+
+        // Deconstruct current dir level
+        inode_unlock(current);
+        inode_put(ctx, current);
+
+        // Goto next level
+        current = next;
+        path = skipelem(path, name);
+    }
+
     /* (Final) TODO END */
-    return 0;
+    return current;
 }
 
-Inode* namei(const char* path, OpContext* ctx) {
+Inode *namei(const char *path, OpContext *ctx)
+{
     char name[FILE_NAME_MAX_LENGTH];
     return namex(path, false, name, ctx);
 }
 
-Inode* nameiparent(const char* path, char* name, OpContext* ctx) {
+Inode *nameiparent(const char *path, char *name, OpContext *ctx)
+{
     return namex(path, true, name, ctx);
 }
 
@@ -645,22 +700,23 @@ Inode* nameiparent(const char* path, char* name, OpContext* ctx) {
     
     @note the caller must hold the lock of `ip`.
  */
-void stati(Inode* ip, struct stat* st) {
+void stati(Inode *ip, struct stat *st)
+{
     st->st_dev = 1;
     st->st_ino = ip->inode_no;
     st->st_nlink = ip->entry.num_links;
     st->st_size = ip->entry.num_bytes;
     switch (ip->entry.type) {
-        case INODE_REGULAR:
-            st->st_mode = S_IFREG;
-            break;
-        case INODE_DIRECTORY:
-            st->st_mode = S_IFDIR;
-            break;
-        case INODE_DEVICE:
-            st->st_mode = 0;
-            break;
-        default:
-            PANIC();
+    case INODE_REGULAR:
+        st->st_mode = S_IFREG;
+        break;
+    case INODE_DIRECTORY:
+        st->st_mode = S_IFDIR;
+        break;
+    case INODE_DEVICE:
+        st->st_mode = 0;
+        break;
+    default:
+        PANIC();
     }
 }

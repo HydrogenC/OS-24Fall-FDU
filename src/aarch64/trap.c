@@ -54,7 +54,7 @@ void trap_global_handler(UserContext *context)
         }
     } break;
     default: {
-        printk("Unknown exception %llu\n", ec);
+        printk("Unknown exception %llu, esr=%llu\n", ec, esr);
         PANIC();
     }
     }
