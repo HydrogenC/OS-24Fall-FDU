@@ -121,17 +121,6 @@ void init_pgdir(struct pgdir *pgdir)
     // Init root table
     pgdir->pt = kalloc_page();
     memset(pgdir->pt, 0, PAGE_SIZE);
-
-    // Init HEAP segment
-    struct section *heap_section =
-            (struct section *)kalloc(sizeof(struct section));
-    // Heap with arbitrary start position, size is 0
-    heap_section->flags = ST_HEAP;
-    heap_section->begin = 0x0;
-    heap_section->end = heap_section->begin;
-    init_list_node(&heap_section->stnode);
-    insert_into_list(&pgdir->lock, &pgdir->section_head,
-                     &heap_section->stnode);
 }
 
 void free_pgdir(struct pgdir *pgdir)

@@ -15,12 +15,34 @@
 
 void init_sections(ListNode *section_head) {
     /* (Final) TODO BEGIN */
+    init_list_node(section_head);
+
+    // TODO: MOVE AWAY HEAP INIT
+    // Init HEAP segment
+    struct section *heap_section =
+            (struct section *)kalloc(sizeof(struct section));
+    // Heap with arbitrary start position, size is 0
+    heap_section->flags = ST_HEAP;
+    heap_section->begin = 0x0;
+    heap_section->end = heap_section->begin;
+    init_list_node(&heap_section->stnode);
+    _insert_into_list(section_head, &heap_section->stnode);
 
     /* (Final) TODO END */
 }
 
 void free_sections(struct pgdir *pd) {
     /* (Final) TODO BEGIN */
+
+    ListNode *node = pd->section_head.next;
+    while (node != &pd->section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+        ListNode* next = node->next;
+
+        detach_from_list(&pd->lock, node);
+        kfree(section);
+        node = next;
+    }
     
     /* (Final) TODO END */
 }

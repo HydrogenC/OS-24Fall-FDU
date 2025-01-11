@@ -63,6 +63,7 @@ void init_proc(Proc *p)
     init_sem(&p->childexit, 0);
     init_schinfo(&p->schinfo);
     init_pgdir(&p->pgdir);
+    init_sections(&p->pgdir.section_head);
 
     p->kstack = kalloc_page();
     p->ucontext = (p->kstack + PAGE_SIZE - sizeof(UserContext));
@@ -222,6 +223,7 @@ NO_RETURN void exit(int code)
     // printk("CPU %lld: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
     // Free pgdir
+    free_sections(&this->pgdir);
     free_pgdir(&this->pgdir);
 
     ListNode *start_node = &this->children;

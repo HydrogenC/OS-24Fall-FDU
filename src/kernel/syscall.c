@@ -34,7 +34,8 @@ void syscall_entry(UserContext *context)
 
     // Get pointer to function
     u64 (*func)(u64, u64, u64, u64, u64, u64) = syscall_table[id];
-    u64 ret = func(context->x[0], context->x[1], context->x[2], context->x[3], context->x[4], context->x[5]);
+    u64 ret = func(context->x[0], context->x[1], context->x[2], context->x[3],
+                   context->x[4], context->x[5]);
 
     // Store return value in x0
     context->x[0] = ret;
@@ -44,20 +45,51 @@ void syscall_entry(UserContext *context)
  * Check if the virtual address [start,start+size) is READABLE by the current
  * user process.
  */
-bool user_readable(const void *start, usize size) {
+bool user_readable(const void *start, usize size)
+{
     /* (Final) TODO BEGIN */
+    Proc *this = thisproc();
 
+    ListNode *node = this->pgdir.section_head.next;
+    while (node != &this->pgdir.section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+        // This section is heap
+        if (section->begin <= (u64)start && section->end >= (u64)start + size) {
+            // Sections are all readable
+            return true;
+        }
+
+        node = node->next;
+    }
+
+    // No section corresponds to the address given
+    return false;
     /* (Final) TODO END */
 }
-
 
 /**
  * Check if the virtual address [start,start+size) is READABLE & WRITEABLE by
  * the current user process.
  */
-bool user_writeable(const void *start, usize size) {
+bool user_writeable(const void *start, usize size)
+{
     /* (Final) TODO Begin */
+    Proc *this = thisproc();
 
+    ListNode *node = this->pgdir.section_head.next;
+    while (node != &this->pgdir.section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+        // This section is heap
+        if (section->begin <= (u64)start && section->end >= (u64)start + size) {
+            // Only of section is writable
+            return section->flags & ST_RO == 0;
+        }
+
+        node = node->next;
+    }
+
+    // No section corresponds to the address given
+    return false;
     /* (Final) TODO End */
 }
 
@@ -66,7 +98,8 @@ bool user_writeable(const void *start, usize size) {
  * current user process return 0 if the length exceeds maxlen or the string is
  * not readable by the current user process.
  */
-usize user_strlen(const char *str, usize maxlen) {
+usize user_strlen(const char *str, usize maxlen)
+{
     for (usize i = 0; i < maxlen; i++) {
         if (user_readable(&str[i], 1)) {
             if (str[i] == 0)

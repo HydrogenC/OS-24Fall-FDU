@@ -13,6 +13,8 @@ enum procstate { UNUSED, RUNNABLE, RUNNING, SLEEPING, DEEPSLEEPING, ZOMBIE };
 
 // Reference: https://github.com/rcore-os/trapframe-rs/blob/master/src/arch/aarch64/mod.rs
 typedef struct UserContext {
+    // SIMD register q0
+    __uint128_t q0;
     // Reserved for user mode traps, not used now
     u64 tpidr, sp;
     // Special registers

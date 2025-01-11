@@ -34,6 +34,9 @@ mrs x4, sp_el0
 pushp(x1, x2)
 pushp(x3, x4)
 
+// Store q0
+str q0, [sp, #-0x10]!
+
 // Return the address to the user context
 mov x0, sp
 
@@ -42,6 +45,10 @@ bl trap_global_handler
 .global trap_return
 trap_return:
 // TODO: restore UserContext
+
+// Restore q0
+ldr q0, [sp], #0x10
+
 // Pop system registers
 popp(x3, x4)
 popp(x1, x2)

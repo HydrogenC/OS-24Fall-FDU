@@ -39,7 +39,7 @@ struct ftable {
 struct oftable {
     // TODO: table of opened file descriptors in a process
     SpinLock lock;
-    File* files[NFILE];
+    File* files[32];
 };
 
 // initialize the global file table.
