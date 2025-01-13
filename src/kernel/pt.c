@@ -8,6 +8,8 @@
 #include <kernel/pt.h>
 #include <kernel/paging.h>
 
+#define min(a, b) (((a) > (b)) ? (b) : (a))
+
 /*
 Reference: https://docs.kernel.org/arch/arm64/memory.html
 VIRTUAL ADDR LAYOUT: 
@@ -20,9 +22,11 @@ VIRTUAL ADDR LAYOUT:
 
 // Reference: https://wenboshen.org/posts/2018-09-09-page-table
 // Check if the entry is valid (the lowest bit of invalid descriptors is 0)
-#define CHECK_DESCRIPTOR(entry) (entry & 0x1)
+#define CHECK_DESCRIPTOR(entry) ((entry) & 0x1)
+#define VA_STOP 0xFFFFFFFFFFFF
 
-PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr){
+PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr)
+{
     PTEntry descriptor = (PTEntry)next_level_addr;
 
     // Set flag for table descriptor
@@ -30,7 +34,8 @@ PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr){
     return descriptor;
 }
 
-PTEntry construct_page_descriptor(PTEntriesPtr phys_addr){
+PTEntry construct_page_descriptor(PTEntriesPtr phys_addr)
+{
     PTEntry descriptor = (PTEntry)phys_addr;
 
     // Set flag for table descriptor
@@ -39,16 +44,17 @@ PTEntry construct_page_descriptor(PTEntriesPtr phys_addr){
 }
 
 // Allocate a new page table, and write its address to the parent level
-PTEntriesPtr allocate_table(PTEntry* parent_level_pte)
+PTEntriesPtr allocate_table(PTEntry *parent_level_pte)
 {
     PTEntriesPtr new_page_table = kalloc_page();
-    
+
     // Clear memory with zero
     memset(new_page_table, 0, PAGE_SIZE);
 
     // Write physical address to parent level page table if applicable
     if (parent_level_pte) {
-        *parent_level_pte = construct_table_descriptor((PTEntriesPtr)K2P(new_page_table));
+        *parent_level_pte =
+                construct_table_descriptor((PTEntriesPtr)K2P(new_page_table));
     }
     return new_page_table;
 }
@@ -149,7 +155,7 @@ void free_pgdir(struct pgdir *pgdir)
                     continue;
                 }
 
-                PTEntriesPtr pt_l3 = (PTEntriesPtr)P2K(PTE_ADDRESS(pt_l2[i2]));
+                void *pt_l3 = (void *)P2K(PTE_ADDRESS(pt_l2[i2]));
                 kfree_page(pt_l3);
             }
 
@@ -160,6 +166,29 @@ void free_pgdir(struct pgdir *pgdir)
     }
 
     kfree_page(pgdir->pt);
+}
+
+// Copy page table in a readonly manner for child proc
+void copy_pgdir(struct pgdir *src, struct pgdir *dest)
+{
+    if (!src->pt) {
+        return;
+    }
+
+    for (u64 va = 0; va < VA_STOP; va += PAGE_SIZE) {
+        PTEntriesPtr src_pte = get_pte(src, va, false);
+        if (!src_pte || !CHECK_DESCRIPTOR(*src_pte)) {
+            continue;
+        }
+
+        PTEntriesPtr dest_pte = get_pte(dest, va, true);
+        ASSERT(dest != NULL);
+        u64 page_addr_physical = PTE_ADDRESS(*src_pte);
+        *dest_pte = page_addr_physical | PTE_USER_DATA | PTE_RO;
+
+        // Increment ref count of page
+        share_page((void *)P2K(page_addr_physical));
+    }
 }
 
 void attach_pgdir(struct pgdir *pgdir)
@@ -194,7 +223,7 @@ void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
     // Free the original page if there is
     if ((*pte) & 0x1) {
         // Kernel address of physical page
-        void* old_page = (void*)P2K(PTE_ADDRESS(*pte));
+        void *old_page = (void *)P2K(PTE_ADDRESS(*pte));
         kfree_page(old_page);
     }
 
@@ -214,6 +243,38 @@ void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
 int copyout(struct pgdir *pd, void *va, void *p, usize len)
 {
     /* (Final) TODO BEGIN */
+    ASSERT(len >= 0);
 
+    char *source = (char *)PAGE_BASE(p);
+    u64 va_offset = (u64)va;
+
+    while (len > 0) {
+        u64 va_page_base = PAGE_BASE(va_offset);
+        PTEntriesPtr pte = get_pte(pd, va_page_base, true);
+        if (pte == NULL) {
+            return -1;
+        }
+
+        // Allocate page if there isn't one
+        if (!CHECK_DESCRIPTOR(*pte)) {
+            char *new_page = (char *)kalloc_page();
+            if (new_page == NULL) {
+                return -1;
+            }
+            *pte = K2P(new_page) | PTE_USER_DATA;
+            arch_tlbi_vmalle1is();
+        }
+
+        char *page_addr = (char *)P2K(PTE_ADDRESS(*pte));
+        u32 offset_in_page = va_offset - va_page_base;
+        usize copy_count = min(PAGE_SIZE - offset_in_page, len);
+
+        memcpy(page_addr + offset_in_page, source, copy_count);
+        len -= copy_count;
+        source += copy_count;
+        va_offset += copy_count;
+    }
+
+    return 0;
     /* (Final) TODO END */
 }

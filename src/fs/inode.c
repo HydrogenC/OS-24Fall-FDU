@@ -373,8 +373,11 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
         count = entry->num_bytes - offset;
     usize end = offset + count;
     ASSERT(offset <= entry->num_bytes);
-    ASSERT(end <= entry->num_bytes);
-    ASSERT(offset <= end);
+
+    // Clamp to end of file
+    if(end > entry->num_bytes){
+        end = entry->num_bytes;
+    }
 
     // TODO
     usize pos = offset;
@@ -387,7 +390,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
         // Cannot read current data block
         if (data_blk_no == 0) {
             // Terminate read and return bytes already read
-            printk("(warn) cannot write data block, aborting. \n");
+            printk("(warn) cannot read data block, aborting. \n");
             return pos - offset;
         }
 

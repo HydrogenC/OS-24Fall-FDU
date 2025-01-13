@@ -56,6 +56,7 @@ void init_proc(Proc *p)
 
     // Allocate pid
     p->pid = alloc_pid();
+    p->state = UNUSED;
 
     // Init members
     init_list_node(&p->ptnode);
@@ -216,15 +217,34 @@ NO_RETURN void exit(int code)
     Proc *this = thisproc();
     decrement_rc(&proc_count);
 
+    // Set exit code
     this->exitcode = code;
+
+    // Release files
+    for (u64 i = 0; i < 32; i++) {
+        if (this->oftable.files[i]) {
+            file_close(this->oftable.files[i]);
+        }
+    }
+
+    // Put cwd
+    /*
+    OpContext ctx;
+    bcache.begin_op(&ctx);
+    inodes.put(&ctx, this->cwd);
+    bcache.end_op(&ctx);
+    */
+    this->cwd = NULL;
+
+    // Free pgdir
+    free_sections(&this->pgdir);
+    free_pgdir(&this->pgdir);
+
     acquire_spinlock(&proc_lock);
 
     // Notify listeners of child exit
     // printk("CPU %lld: Proc with pid %d posted exit sem to parent %d. \n", cpuid(), this->pid, this->parent->pid);
     post_sem(&this->parent->childexit);
-    // Free pgdir
-    free_sections(&this->pgdir);
-    free_pgdir(&this->pgdir);
 
     ListNode *start_node = &this->children;
     // Transfer children to root_proc if there's any
@@ -329,5 +349,32 @@ int fork()
      * 6. Activate the new proc and return its pid.
      */
 
+    Proc *this = thisproc();
+    Proc *new_proc = create_proc();
+    ASSERT(new_proc != NULL);
+
+    // Copy page table
+    copy_pgdir(&this->pgdir, &new_proc->pgdir);
+    copy_sections(&this->pgdir.section_head, &new_proc->pgdir.section_head);
+    
+    // Copy trap frame
+    *(new_proc->ucontext) = *(this->ucontext);
+    // Set return values for child proc
+    new_proc->ucontext->x[0] = 0;
+
+    // Copy oftable
+    for (u64 i = 0; i < 32; i++) {
+        if (this->oftable.files[i]) {
+            new_proc->oftable.files[i] = file_dup(this->oftable.files[i]);
+        }
+    }
+
+    // Set parent and cwd
+    new_proc->parent = this;
+    new_proc->cwd = inodes.share(this->cwd);
+    // Set as runnable and insert into sched list
+    activate_proc(new_proc);
+
+    return new_proc->pid;
     /* (Final) TODO END */
 }

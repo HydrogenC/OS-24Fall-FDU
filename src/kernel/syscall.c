@@ -53,7 +53,7 @@ bool user_readable(const void *start, usize size)
     ListNode *node = this->pgdir.section_head.next;
     while (node != &this->pgdir.section_head) {
         struct section *section = container_of(node, struct section, stnode);
-        // This section is heap
+        // Search for a section that fully encloses the address range (forbid striding across multiple sections)
         if (section->begin <= (u64)start && section->end >= (u64)start + size) {
             // Sections are all readable
             return true;
@@ -79,7 +79,7 @@ bool user_writeable(const void *start, usize size)
     ListNode *node = this->pgdir.section_head.next;
     while (node != &this->pgdir.section_head) {
         struct section *section = container_of(node, struct section, stnode);
-        // This section is heap
+        // Search for a section that fully encloses the address range (forbid striding across multiple sections)
         if (section->begin <= (u64)start && section->end >= (u64)start + size) {
             // Only of section is writable
             return section->flags & ST_RO == 0;

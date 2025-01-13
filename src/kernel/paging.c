@@ -12,8 +12,8 @@
 #include <kernel/pt.h>
 #include <kernel/sched.h>
 
-
-void init_sections(ListNode *section_head) {
+void init_sections(ListNode *section_head)
+{
     /* (Final) TODO BEGIN */
     init_list_node(section_head);
 
@@ -31,23 +31,25 @@ void init_sections(ListNode *section_head) {
     /* (Final) TODO END */
 }
 
-void free_sections(struct pgdir *pd) {
+void free_sections(struct pgdir *pd)
+{
     /* (Final) TODO BEGIN */
 
     ListNode *node = pd->section_head.next;
     while (node != &pd->section_head) {
         struct section *section = container_of(node, struct section, stnode);
-        ListNode* next = node->next;
+        ListNode *next = node->next;
 
         detach_from_list(&pd->lock, node);
         kfree(section);
         node = next;
     }
-    
+
     /* (Final) TODO END */
 }
 
-u64 sbrk(i64 size) {
+u64 sbrk(i64 size)
+{
     /**
      * (Final) TODO BEGIN 
      * 
@@ -112,7 +114,8 @@ u64 sbrk(i64 size) {
     /* (Final) TODO END */
 }
 
-int pgfault_handler(u64 iss) {
+int pgfault_handler(u64 iss)
+{
     Proc *p = thisproc();
     struct pgdir *pd = &p->pgdir;
     u64 addr =
@@ -162,17 +165,29 @@ int pgfault_handler(u64 iss) {
 
     // Translation fault
     if ((dfsc >> 2) == 0x1) {
-        if (containing_section->flags & ST_HEAP) {
-            // Do a lazy allocation
+        // For lazy-allocated or file-backed sections, allocate physical page
+        if (containing_section->flags & ST_HEAP ||
+            containing_section->fp != NULL) {
             void *new_page = kalloc_page();
             if (!new_page) {
                 return -1;
             }
 
             vmmap(pd, page_addr, new_page, PTE_USER_DATA);
+
+            // Read content from file
+            if (containing_section->fp != NULL) {
+                inodes.lock(containing_section->fp->ip);
+                inodes.read(containing_section->fp->ip, new_page,
+                            containing_section->offset + page_addr -
+                                    containing_section->begin,
+                            PAGE_SIZE);
+                inodes.unlock(containing_section->fp->ip);
+            }
+
             return 0;
         } else {
-            printk("Translation error triggered out of heap section.\n");
+            printk("WARNING: Translation error not resolvable.\n");
             return -1;
         }
     }
@@ -196,6 +211,9 @@ int pgfault_handler(u64 iss) {
         // Copy the contents of the old page
         memcpy(new_page, old_page_addr, PAGE_SIZE);
         vmmap(pd, page_addr, new_page, PTE_USER_DATA);
+
+        // Decrement ref count
+        kfree_page(old_page_addr);
         return 0;
     }
 
@@ -208,6 +226,15 @@ int pgfault_handler(u64 iss) {
 void copy_sections(ListNode *from_head, ListNode *to_head)
 {
     /* (Final) TODO BEGIN */
+    ListNode *node = from_head->next;
+    while (node != from_head) {
+        struct section *section = container_of(node, struct section, stnode);
 
+        struct section *copied = kalloc(sizeof(struct section));
+        memcpy(copied, section, sizeof(struct section));
+        _insert_into_list(to_head, &copied->stnode);
+
+        node = node->next;
+    }
     /* (Final) TODO END */
 }

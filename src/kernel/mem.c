@@ -326,6 +326,15 @@ void kfree(void *ptr)
     return;
 }
 
+// Increment the ref count of the page
+void* share_page(void *ptr){
+    u32 page_index = ((char *)ptr - pages_base) / PAGE_SIZE;
+    ASSERT(pages[page_index].ref.count > 0);
+    increment_rc(&pages[page_index].ref);
+
+    return ptr;
+}
+
 WARN_RESULT void *get_zero_page()
 {
     // TODO
