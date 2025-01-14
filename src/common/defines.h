@@ -106,3 +106,5 @@ NO_INLINE NO_RETURN void _panic(const char *, int);
 #define LO(addr) (u32)((addr) & 0xffffffff)
 #define HI(addr) (u32)(((addr) >> 32) & 0xffffffff)
 #define REG(addr) (*(volatile u32 *)(u64)(addr))
+
+#define min(a, b) (((a) > (b)) ? (b) : (a))

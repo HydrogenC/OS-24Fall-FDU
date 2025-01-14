@@ -89,6 +89,7 @@ void pgfault_second_test() {
     i64 limit = 10; // do not need too big
     struct pgdir *pd = &thisproc()->pgdir;
     init_pgdir(pd);
+    init_sections(&pd->section_head);
     attach_pgdir(pd);
     struct section *st = NULL;
     _for_in_list(node, &pd->section_head) {

@@ -5,7 +5,7 @@
 #include <fs/cache.h>
 #include <kernel/sched.h>
 
-#define min(a, b) (((a) > (b)) ? (b) : (a))
+
 
 /**
     @brief the private reference to the super block.
@@ -688,6 +688,11 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
         // Goto next level
         current = next;
         path = skipelem(path, name);
+    }
+
+    if(nameiparent){
+        inode_put(ctx, current);
+        return 0;
     }
 
     /* (Final) TODO END */

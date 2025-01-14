@@ -53,8 +53,8 @@ void init_block_device() {
     u32* lba_part_2 = (u32*)&buffer[0x1CE + 0x8];
     u32* numsec_part_2 = (u32*)&buffer[0x1CE + 0xC];
 
-    printk("LBA of partition 2 is %u. \n", *lba_part_2);
-    printk("Number of sectors of partition 2 is %u. \n", *numsec_part_2);
+    // printk("LBA of partition 2 is %u. \n", *lba_part_2);
+    // printk("Number of sectors of partition 2 is %u. \n", *numsec_part_2);
 
     block_device.read(*lba_part_2 + 1, sblock_data);
 }

@@ -25,6 +25,7 @@ void init_sections(ListNode *section_head)
     heap_section->flags = ST_HEAP;
     heap_section->begin = 0x0;
     heap_section->end = heap_section->begin;
+    heap_section->fp = NULL;
     init_list_node(&heap_section->stnode);
     _insert_into_list(section_head, &heap_section->stnode);
 
@@ -178,10 +179,12 @@ int pgfault_handler(u64 iss)
             // Read content from file
             if (containing_section->fp != NULL) {
                 inodes.lock(containing_section->fp->ip);
+
+                u64 offset_in_section = page_addr - containing_section->begin;
                 inodes.read(containing_section->fp->ip, new_page,
-                            containing_section->offset + page_addr -
-                                    containing_section->begin,
-                            PAGE_SIZE);
+                            containing_section->offset + offset_in_section,
+                            min(PAGE_SIZE, containing_section->length -
+                                                   offset_in_section));
                 inodes.unlock(containing_section->fp->ip);
             }
 

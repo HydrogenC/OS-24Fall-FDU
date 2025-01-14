@@ -8,6 +8,7 @@
 #include <kernel/pt.h>
 #include <kernel/mem.h>
 #include <kernel/paging.h>
+#include <kernel/printk.h>
 #include <aarch64/trap.h>
 #include <fs/file.h>
 #include <fs/inode.h>
@@ -17,9 +18,11 @@ extern int fdalloc(struct file *f);
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     /* (Final) TODO BEGIN */
+    printk("Execve called\n");
+
     OpContext ctx;
     bcache.begin_op(&ctx);
-    Inode *inode = namei(&ctx, path);
+    Inode *inode = namei(path, &ctx);
 
     if (!inode) {
         bcache.end_op(&ctx);
@@ -66,5 +69,6 @@ int execve(const char *path, char *const argv[], char *const envp[])
     inodes.put(&ctx, inode);
     bcache.end_op(&ctx);
 
+    return 0;
     /* (Final) TODO END */
 }

@@ -8,8 +8,6 @@
 #include <kernel/pt.h>
 #include <kernel/paging.h>
 
-#define min(a, b) (((a) > (b)) ? (b) : (a))
-
 /*
 Reference: https://docs.kernel.org/arch/arm64/memory.html
 VIRTUAL ADDR LAYOUT: 
