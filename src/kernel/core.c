@@ -48,27 +48,36 @@ NO_RETURN void kernel_entry()
 
     extern char icode[], eicode[];
     Proc *proc = create_proc();
-    for (u64 q = (u64)icode; q < (u64)eicode; q += PAGE_SIZE) {
+
+    u64 icode_page = (u64)PAGE_BASE(icode);
+    for (u64 q = icode_page; q < (u64)eicode; q += PAGE_SIZE) {
         // Map code to EXTMEM
-        vmmap(&proc->pgdir, EXTMEM + q - (u64)icode, q, PTE_USER_DATA);
+        vmmap(&proc->pgdir, EXTMEM + q - icode_page, (void *)q, PTE_USER_DATA);
     }
     ASSERT(proc->pgdir.pt);
 
     struct section *code_section =
             (struct section *)kalloc(sizeof(struct section));
-    code_section->begin = EXTMEM;
-    code_section->end = EXTMEM + (eicode - icode);
-    code_section->flags = ST_DATA;
+    code_section->begin = EXTMEM + (u64)(icode - icode_page);
+    code_section->end = code_section->begin + (eicode - icode);
+    code_section->flags = ST_TEXT;
     code_section->fp = NULL;
     _insert_into_list(&proc->pgdir.section_head, &code_section->stnode);
 
-    proc->ucontext->elr = EXTMEM;
+    proc->ucontext->elr = code_section->begin;
+    // Put stack pointer at max address
+    proc->ucontext->sp = PHYSTOP;
     // Hint enter user mode
     proc->ucontext->spsr = 0;
     start_proc(proc, trap_return, 0);
 
-    while (1)
-        yield();
+    // An infinite loop
+    while (true) {
+        int code;
+        int pid = wait(&code);
+        ASSERT(pid > 0);
+    }
+
     /* (Final) TODO END */
 }
 

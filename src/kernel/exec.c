@@ -31,7 +31,7 @@ int execve(const char *path, char *const argv[], char *const envp[])
 
     inodes.lock(inode);
     Elf64_Ehdr elf_header;
-    ASSERT(inodes.read(inode, &elf_header, 0, sizeof(Elf64_Ehdr)) ==
+    ASSERT(inodes.read(inode, (u8 *)&elf_header, 0, sizeof(Elf64_Ehdr)) ==
            sizeof(Elf64_Ehdr));
 
     // Check magic
@@ -48,7 +48,7 @@ int execve(const char *path, char *const argv[], char *const envp[])
     Elf64_Phdr program_header;
     for (u16 ph_index = 0; ph_index < elf_header.e_phnum; ph_index++) {
         u64 offset = elf_header.e_phoff + ph_index * sizeof(Elf64_Phdr);
-        ASSERT(inodes.read(inode, &program_header, offset,
+        ASSERT(inodes.read(inode, (u8 *)&program_header, offset,
                            sizeof(Elf64_Phdr)) == sizeof(Elf64_Phdr));
 
         if (program_header.p_type != PT_LOAD) {
@@ -62,13 +62,14 @@ int execve(const char *path, char *const argv[], char *const envp[])
         section->end = program_header.p_vaddr + program_header.p_memsz;
         section->flags = 0;
 
-        _insert_into_list(&proc->pgdir.section_head, section);
+        _insert_into_list(&proc->pgdir.section_head, &section->stnode);
     }
 
     inodes.unlock(inode);
     inodes.put(&ctx, inode);
     bcache.end_op(&ctx);
 
+    printk("Execve finished\n");
     return 0;
     /* (Final) TODO END */
 }

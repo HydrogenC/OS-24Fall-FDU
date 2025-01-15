@@ -20,7 +20,7 @@
 void trap_global_handler(UserContext *context)
 {
     thisproc()->ucontext = context;
-
+    
     u64 esr = arch_get_esr();
     u64 ec = esr >> ESR_EC_SHIFT;
     u64 iss = esr & ESR_ISS_MASK;
@@ -42,16 +42,9 @@ void trap_global_handler(UserContext *context)
     } break;
     case ESR_EC_IABORT_EL0:
     case ESR_EC_IABORT_EL1:
-        PANIC();
-        break;
     case ESR_EC_DABORT_EL0:
     case ESR_EC_DABORT_EL1: {
-        // If failed to handle exception, just kill the process
-        if (pgfault_handler(iss) == -1) {
-            printk("Failed to handle page fault (esr=%lld), killing proc %d\n",
-                   esr, thisproc()->pid);
-            ASSERT(kill(thisproc()->pid) == 0);
-        }
+        pgfault_handler(iss);
     } break;
     default: {
         printk("Unknown exception %llu, esr=%llu\n", ec, esr);

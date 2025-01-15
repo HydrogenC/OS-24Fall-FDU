@@ -5,8 +5,6 @@
 #include <fs/cache.h>
 #include <kernel/sched.h>
 
-
-
 /**
     @brief the private reference to the super block.
 
@@ -127,7 +125,7 @@ static void inode_lock(Inode *inode)
 {
     ASSERT(inode->rc.count > 0);
     // TODO
-    acquire_sleeplock(&inode->lock);
+    ASSERT(acquire_sleeplock(&inode->lock));
 
     // Load from disk if not present
     if (!inode->valid) {
@@ -375,7 +373,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
     ASSERT(offset <= entry->num_bytes);
 
     // Clamp to end of file
-    if(end > entry->num_bytes){
+    if (end > entry->num_bytes) {
         end = entry->num_bytes;
     }
 
@@ -469,7 +467,8 @@ static usize inode_lookup(Inode *inode, const char *name, usize *index)
     u32 len_name = strlen(name);
     DirEntry dir_entry;
     for (u32 i = 0; i < inode->entry.num_bytes; i += sizeof(DirEntry)) {
-        usize read_size = inode_read(inode, &dir_entry, i, sizeof(DirEntry));
+        usize read_size =
+                inode_read(inode, (u8 *)&dir_entry, i, sizeof(DirEntry));
         ASSERT(read_size == sizeof(DirEntry));
 
         // Empty item
@@ -497,14 +496,14 @@ static usize inode_lookup(Inode *inode, const char *name, usize *index)
 }
 
 // see `inode.h`.
-static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
+static isize inode_insert(OpContext *ctx, Inode *inode, const char *name,
                           usize inode_no)
 {
     InodeEntry *entry = &inode->entry;
     ASSERT(entry->type == INODE_DIRECTORY);
 
     // TODO
-    u32 dir_index;
+    usize dir_index;
     u32 block_no = inode_lookup(inode, name, &dir_index);
 
     // Already exists
@@ -513,11 +512,11 @@ static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
     }
 
     DirEntry dir_entry;
-    u32 entry_offset = 0;
+    isize entry_offset = 0;
     for (; entry_offset < inode->entry.num_bytes;
          entry_offset += sizeof(DirEntry)) {
-        usize read_size =
-                inode_read(inode, &dir_entry, entry_offset, sizeof(DirEntry));
+        usize read_size = inode_read(inode, (u8 *)&dir_entry, entry_offset,
+                                     sizeof(DirEntry));
         ASSERT(read_size == sizeof(DirEntry));
 
         // Empty item
@@ -534,8 +533,8 @@ static usize inode_insert(OpContext *ctx, Inode *inode, const char *name,
     memcpy(dir_entry.name, name, strlen(name) + 1);
 
     // Test if write succeeds
-    if (inode_write(ctx, inode, &dir_entry, entry_offset, sizeof(DirEntry)) <
-        sizeof(DirEntry)) {
+    if (inode_write(ctx, inode, (u8 *)&dir_entry, entry_offset,
+                    sizeof(DirEntry)) < sizeof(DirEntry)) {
         printk("PANIC: inode insertion failed due to write fault\n");
         return -1;
     }
@@ -550,14 +549,14 @@ static void inode_remove(OpContext *ctx, Inode *inode, usize index)
 
     // TODO
     DirEntry dir_entry;
-    usize read_size = inode_read(inode, &dir_entry, index * sizeof(DirEntry),
-                                 sizeof(DirEntry));
+    usize read_size = inode_read(inode, (u8 *)&dir_entry,
+                                 index * sizeof(DirEntry), sizeof(DirEntry));
     ASSERT(read_size == sizeof(DirEntry));
 
     if (dir_entry.inode_no != 0) {
         // TODO: Remove the inode of `inode_no` if applicable, but this is not necessary in this lab
         dir_entry.inode_no = 0;
-        inode_write(ctx, inode, &dir_entry, index * sizeof(DirEntry),
+        inode_write(ctx, inode, (u8 *)&dir_entry, index * sizeof(DirEntry),
                     sizeof(DirEntry));
     }
 }
@@ -644,7 +643,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
 
     // Absolute path
     if (path[0] == '/') {
-        current = inode_get(ROOT_INODE_NO);
+        current = inode_share(inodes.root);
     } else {
         // Increment rc when getting the path
         current = inode_share(thisproc()->cwd);
@@ -670,7 +669,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
 
         // Find next level
         usize next_no = inode_lookup(current, name, NULL);
-        if (next_no <= 0) {
+        if (next_no == 0) {
             inode_unlock(current);
             inode_put(ctx, current);
             printk("WARNING: Next dir `%s` not found! \n", name);
@@ -690,7 +689,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
         path = skipelem(path, name);
     }
 
-    if(nameiparent){
+    if (nameiparent) {
         inode_put(ctx, current);
         return 0;
     }

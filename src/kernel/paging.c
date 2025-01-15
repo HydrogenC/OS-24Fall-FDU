@@ -134,6 +134,7 @@ int pgfault_handler(u64 iss)
     // Ensure that `far` is valid
     if ((iss << 10) & 0x1) {
         printk("ERROR: Invalid FAR, cannot handle. \n");
+        exit(-1);
         return -1;
     }
 
@@ -155,6 +156,7 @@ int pgfault_handler(u64 iss)
     if (containing_section == NULL) {
         printk("Warning: Requested address (%llu) isn't inside a section! \n",
                addr);
+        exit(-1);
         return -1;
     }
 
@@ -191,6 +193,7 @@ int pgfault_handler(u64 iss)
             return 0;
         } else {
             printk("WARNING: Translation error not resolvable.\n");
+            exit(-1);
             return -1;
         }
     }
@@ -208,6 +211,7 @@ int pgfault_handler(u64 iss)
         // Allocate a new page and copy
         void *new_page = kalloc_page();
         if (!new_page) {
+            exit(-1);
             return -1;
         }
 
@@ -221,6 +225,8 @@ int pgfault_handler(u64 iss)
     }
 
     // Permission fault, address size fault, etc
+    printk("Failed to handle page fault, killing proc %d\n", thisproc()->pid);
+    exit(-1);
     return -1;
 
     /* (Final) TODO END */

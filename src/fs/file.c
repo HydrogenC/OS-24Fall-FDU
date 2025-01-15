@@ -3,6 +3,7 @@
 #include <common/spinlock.h>
 #include <common/sem.h>
 #include <fs/inode.h>
+#include <fs/pipe.h>
 #include <common/list.h>
 #include <kernel/mem.h>
 #include <kernel/printk.h>
@@ -141,8 +142,7 @@ isize file_read(struct file *f, char *addr, isize n)
     case FD_INODE: {
         ASSERT(f->ip != NULL);
         inodes.lock(f->ip);
-        usize bytes_read = inodes.read(f->ip, addr, f->off, n);
-        ASSERT(bytes_read >= 0);
+        usize bytes_read = inodes.read(f->ip, (u8 *)addr, f->off, n);
         f->off += bytes_read;
         inodes.unlock(f->ip);
         return bytes_read;
@@ -174,13 +174,11 @@ isize file_write(struct file *f, char *addr, isize n)
         OpContext ctx;
         bcache.begin_op(&ctx);
         inodes.lock(f->ip);
-        usize bytes_written = inodes.write(&ctx, f->ip, addr, f->off, n);
+        usize bytes_written = inodes.write(&ctx, f->ip, (u8 *)addr, f->off, n);
         inodes.unlock(f->ip);
         bcache.end_op(&ctx);
 
-        ASSERT(bytes_written >= 0);
         f->off += bytes_written;
-        
         return bytes_written;
     } break;
     case FD_PIPE: {

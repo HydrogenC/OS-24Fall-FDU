@@ -82,7 +82,7 @@ bool user_writeable(const void *start, usize size)
         // Search for a section that fully encloses the address range (forbid striding across multiple sections)
         if (section->begin <= (u64)start && section->end >= (u64)start + size) {
             // Only of section is writable
-            return section->flags & ST_RO == 0;
+            return (section->flags & ST_RO) == 0;
         }
 
         node = node->next;

@@ -227,14 +227,13 @@ NO_RETURN void exit(int code)
         }
     }
 
-    // Put cwd
-    /*
-    OpContext ctx;
-    bcache.begin_op(&ctx);
-    inodes.put(&ctx, this->cwd);
-    bcache.end_op(&ctx);
-    */
-    this->cwd = NULL;
+    if (this->cwd) {
+        OpContext ctx;
+        bcache.begin_op(&ctx);
+        inodes.put(&ctx, this->cwd);
+        bcache.end_op(&ctx);
+        this->cwd = NULL;
+    }
 
     // Free pgdir
     free_sections(&this->pgdir);
@@ -356,7 +355,7 @@ int fork()
     // Copy page table
     copy_pgdir(&this->pgdir, &new_proc->pgdir);
     copy_sections(&this->pgdir.section_head, &new_proc->pgdir.section_head);
-    
+
     // Copy trap frame
     *(new_proc->ucontext) = *(this->ucontext);
     // Set return values for child proc

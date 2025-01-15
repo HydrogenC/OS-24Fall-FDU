@@ -231,7 +231,7 @@ typedef struct {
 
         @throw panic if `inode` is not a directory.
      */
-    usize (*insert)(OpContext* ctx,
+    isize (*insert)(OpContext* ctx,
                     Inode* inode,
                     const char* name,
                     usize inode_no);

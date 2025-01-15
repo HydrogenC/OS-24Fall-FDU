@@ -341,8 +341,8 @@ Inode *create(const char *path, short type, short major, short minor,
 
     // Create `.` and `..`
     if (type == INODE_DIRECTORY) {
-        if (inodes.insert(ctx, target, '.', target->inode_no) < 0 ||
-            inodes.insert(ctx, target, '..', parent->inode_no) < 0) {
+        if (inodes.insert(ctx, target, ".", target->inode_no) < 0 ||
+            inodes.insert(ctx, target, "..", parent->inode_no) < 0) {
             printk("(warn) Failed to alloc . or ..\n");
 
             // Deconstruct parent
