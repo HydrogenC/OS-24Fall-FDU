@@ -4,6 +4,7 @@
 #include <kernel/printk.h>
 #include <fs/cache.h>
 #include <kernel/sched.h>
+#include <kernel/console.h>
 
 /**
     @brief the private reference to the super block.
@@ -251,6 +252,7 @@ static void inode_clear(OpContext *ctx, Inode *inode)
 static Inode *inode_share(Inode *inode)
 {
     // TODO
+    ASSERT(inode != NULL);
     increment_rc(&inode->rc);
     return inode;
 }
@@ -366,7 +368,13 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
 // see `inode.h`.
 static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
 {
+    ASSERT(inode != NULL);
     InodeEntry *entry = &inode->entry;
+
+    if (entry->type == INODE_DEVICE) {
+        return console_read(inode, (char*)dest, count);
+    }
+
     if (count + offset > entry->num_bytes)
         count = entry->num_bytes - offset;
     usize end = offset + count;
@@ -394,7 +402,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
 
         Block *data_blk = cache->acquire(data_blk_no);
         u32 pos_in_block = pos % BLOCK_SIZE;
-        u32 read_count = min(BLOCK_SIZE - pos_in_block, end - pos);
+        u32 read_count = MIN(BLOCK_SIZE - pos_in_block, end - pos);
         memcpy(dest, &data_blk->data[pos_in_block], read_count);
 
         // printk("Read %d bytes from block %d at pos %d\n", read_count,
@@ -412,7 +420,13 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
 static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
                          usize count)
 {
+    ASSERT(inode != NULL);
     InodeEntry *entry = &inode->entry;
+
+    if (entry->type == INODE_DEVICE) {
+        return console_write(inode, (char*)src, count);
+    }
+
     usize end = offset + count;
     ASSERT(offset <= entry->num_bytes);
     ASSERT(end <= INODE_MAX_BYTES);
@@ -436,7 +450,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
 
         Block *data_blk = cache->acquire(data_blk_no);
         u32 pos_in_block = pos % BLOCK_SIZE;
-        u32 write_count = min(BLOCK_SIZE - pos_in_block, end - pos);
+        u32 write_count = MIN(BLOCK_SIZE - pos_in_block, end - pos);
         memcpy(&data_blk->data[pos_in_block], src, write_count);
 
         // printk("Written %d bytes to block %d at pos %d\n", write_count,
@@ -475,6 +489,7 @@ static usize inode_lookup(Inode *inode, const char *name, usize *index)
         if (dir_entry.inode_no == 0) {
             continue;
         }
+        // printk("found file: %s\n", dir_entry.name);
 
         u32 len_entry_name = strlen(dir_entry.name);
         // Two string must not be equal
@@ -535,7 +550,7 @@ static isize inode_insert(OpContext *ctx, Inode *inode, const char *name,
     // Test if write succeeds
     if (inode_write(ctx, inode, (u8 *)&dir_entry, entry_offset,
                     sizeof(DirEntry)) < sizeof(DirEntry)) {
-        printk("PANIC: inode insertion failed due to write fault\n");
+        printk("(warn) inode insertion failed due to write fault\n");
         return -1;
     }
     return entry_offset / sizeof(DirEntry);
@@ -657,7 +672,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
         if (current->entry.type != INODE_DIRECTORY) {
             inode_unlock(current);
             inode_put(ctx, current);
-            printk("WARNING: Calling `namex` on non-directory inode! \n");
+            printk("(warn) calling `namex` on non-directory inode! \n");
             return NULL;
         }
 
@@ -672,7 +687,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
         if (next_no == 0) {
             inode_unlock(current);
             inode_put(ctx, current);
-            printk("WARNING: Next dir `%s` not found! \n", name);
+            printk("(warn) next dir `%s` not found! \n", name);
             return NULL;
         }
 

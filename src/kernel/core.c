@@ -64,6 +64,8 @@ NO_RETURN void kernel_entry()
     code_section->fp = NULL;
     _insert_into_list(&proc->pgdir.section_head, &code_section->stnode);
 
+    proc->cwd = inodes.share(inodes.root);
+
     proc->ucontext->elr = code_section->begin;
     // Put stack pointer at max address
     proc->ucontext->sp = PHYSTOP;
@@ -75,7 +77,7 @@ NO_RETURN void kernel_entry()
     while (true) {
         int code;
         int pid = wait(&code);
-        ASSERT(pid > 0);
+        ASSERT(pid != 0);
     }
 
     /* (Final) TODO END */
@@ -85,6 +87,9 @@ NO_INLINE NO_RETURN void _panic(const char *file, int line)
 {
     printk("=====%s:%d PANIC%lld!=====\n", file, line, cpuid());
     panic_flag = true;
+    // Block further outputs
+    while (true)
+        ;
     set_cpu_off();
     for (int i = 0; i < NCPU; i++) {
         if (cpus[i].online)

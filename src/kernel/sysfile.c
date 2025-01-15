@@ -299,7 +299,7 @@ Inode *create(const char *path, short type, short major, short minor,
 
     Inode *parent = nameiparent(path, name, ctx);
     // Parent dir not found
-    if (parent == NULL) {
+    if (!parent) {
         return NULL;
     }
     inodes.lock(parent);
@@ -343,7 +343,7 @@ Inode *create(const char *path, short type, short major, short minor,
     if (type == INODE_DIRECTORY) {
         if (inodes.insert(ctx, target, ".", target->inode_no) < 0 ||
             inodes.insert(ctx, target, "..", parent->inode_no) < 0) {
-            printk("(warn) Failed to alloc . or ..\n");
+            printk("(warn) failed to alloc . or ..\n");
 
             // Deconstruct parent
             inodes.unlock(parent);
@@ -359,20 +359,20 @@ Inode *create(const char *path, short type, short major, short minor,
         // Increment ref of parent due to `..`
         parent->entry.num_links++;
         inodes.sync(ctx, parent, true);
+    }
 
-        if (inodes.insert(ctx, parent, name, target->inode_no) < 0) {
-            printk("(warn) Failed to append new entry to parent\n");
+    if (inodes.insert(ctx, parent, name, target->inode_no) < 0) {
+        printk("(warn) failed to append new entry to parent\n");
 
-            // Deconstruct parent
-            inodes.unlock(parent);
-            inodes.put(ctx, parent);
+        // Deconstruct parent
+        inodes.unlock(parent);
+        inodes.put(ctx, parent);
 
-            // Deconstruct self
-            inodes.clear(ctx, target);
-            inodes.unlock(target);
-            inodes.put(ctx, target);
-            return NULL;
-        }
+        // Deconstruct self
+        inodes.clear(ctx, target);
+        inodes.unlock(target);
+        inodes.put(ctx, target);
+        return NULL;
     }
 
     // Deconstruct parent
@@ -492,13 +492,13 @@ define_syscall(chdir, const char *path)
      * You may need to do some validations.
      */
 
-    Proc* this = thisproc();
+    Proc *this = thisproc();
 
     OpContext ctx;
     bcache.begin_op(&ctx);
 
-    Inode* inode = namei(path, &ctx);
-    if(inode == NULL){
+    Inode *inode = namei(path, &ctx);
+    if (inode == NULL) {
         bcache.end_op(&ctx);
         return -1;
     }
@@ -506,7 +506,7 @@ define_syscall(chdir, const char *path)
     inodes.lock(inode);
 
     // Must be directory
-    if(inode->entry.type != INODE_DIRECTORY){
+    if (inode->entry.type != INODE_DIRECTORY) {
         bcache.end_op(&ctx);
         return -1;
     }

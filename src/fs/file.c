@@ -89,7 +89,7 @@ void file_close(struct file *f)
     // Obtain the handle, then release the lock, to avoid the handle from being overwritten
     switch (file_type) {
     case FD_PIPE: {
-        struct pipe *pip = f->pipe;
+        struct pipe *pipe = f->pipe;
         release_spinlock(&ftable.lock);
         // TODO: Close the pipe
     } break;
@@ -134,7 +134,7 @@ isize file_read(struct file *f, char *addr, isize n)
 {
     /* (Final) TODO BEGIN */
     if (!f->readable) {
-        printk("WARNING: Reading unreadable file\n");
+        printk("(warn) Reading unreadable file\n");
         return -1;
     }
 
@@ -163,7 +163,7 @@ isize file_write(struct file *f, char *addr, isize n)
 {
     /* (Final) TODO BEGIN */
     if (!f->writable) {
-        printk("WARNING: Writing unwritable file\n");
+        printk("(warn) Writing unwritable file\n");
         return -1;
     }
 

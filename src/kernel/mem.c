@@ -17,7 +17,7 @@ static SpinLock page_lock, block_lock;
 static int total_page_cnt;
 
 extern char end[];
-static char *pages_base;
+static char *pages_start;
 static void *zero_page = NULL;
 
 // TODO: This shouldn't be hardcoded
@@ -44,11 +44,11 @@ static page_header *partial_list[9] = { NULL };
 
 void init_pages()
 {
-    pages_base = ALIGN_UP_PTR(end, PAGE_SIZE);
+    pages_start = ALIGN_UP_PTR(end, PAGE_SIZE);
 
     // Stop addr in kernel space
     char *kernel_stop = (char *)P2K(PHYSTOP);
-    for (char *i = pages_base; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
+    for (char *i = pages_start; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
 
         if (free_list) {
@@ -62,7 +62,7 @@ void init_pages()
         init_rc(&pages[total_page_cnt++].ref);
     }
 
-    // printk("Page start addr: %llu, registered pages: %d\n", (usize)pages_base,
+    // printk("Page start addr: %llu, registered pages: %d\n", (usize)pages_start,
     //        index);
     // printk("Size of header: %llu\n", sizeof(page_header));
 }
@@ -96,7 +96,7 @@ void *kalloc_page()
     }
     p_page->next = p_page->prev = NULL;
 
-    u32 page_index = ((char *)p_page - pages_base) / PAGE_SIZE;
+    u32 page_index = ((char *)p_page - pages_start) / PAGE_SIZE;
     ASSERT(pages[page_index].ref.count == 0);
     increment_rc(&pages[page_index].ref);
 
@@ -111,7 +111,7 @@ void kfree_page(void *p)
     // Insert into free list
     acquire_spinlock(&page_lock);
 
-    u32 page_index = ((char *)p - pages_base) / PAGE_SIZE;
+    u32 page_index = ((char *)p - pages_start) / PAGE_SIZE;
     ASSERT(pages[page_index].ref.count > 0);
     decrement_rc(&pages[page_index].ref);
     // Not the last user of this page, just return
@@ -299,7 +299,7 @@ void *kalloc(unsigned long long size)
 void kfree(void *ptr)
 {
     if (!ptr) {
-        printk("PANIC: freeing NULL pointer\n");
+        printk("(warn) freeing NULL pointer\n");
         return;
     }
 
@@ -327,10 +327,17 @@ void kfree(void *ptr)
 }
 
 // Increment the ref count of the page
-void* share_page(void *ptr){
-    u32 page_index = ((char *)ptr - pages_base) / PAGE_SIZE;
+void *share_page(void *ptr)
+{
+    // Reference counting is not applicable to shared zero page
+    if (ptr == zero_page) {
+        return ptr;
+    }
+
+    u32 page_index = ((char *)ptr - pages_start) / PAGE_SIZE;
     ASSERT(pages[page_index].ref.count > 0);
     increment_rc(&pages[page_index].ref);
+    // printk("Ref to page %u is now %d\n", page_index, pages[page_index].ref.count);
 
     return ptr;
 }
@@ -343,7 +350,7 @@ WARN_RESULT void *get_zero_page()
         memset(zero_page, 0, PAGE_SIZE);
 
         // Set rc to a very large number to ensure that this page will never be freed
-        u32 page_index = ((char *)zero_page - pages_base) / PAGE_SIZE;
+        u32 page_index = ((char *)zero_page - pages_start) / PAGE_SIZE;
         pages[page_index].ref.count = __INT_MAX__;
     }
 

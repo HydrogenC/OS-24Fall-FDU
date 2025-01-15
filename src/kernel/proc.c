@@ -186,7 +186,9 @@ int wait(int *exitcode)
         Proc *child_proc = container_of(child, Proc, ptnode);
         // `is_zombie` waits for sched_lock, so that it can be ensured that `sched` has finished.
         if (is_zombie(child_proc)) {
-            *exitcode = child_proc->exitcode;
+            if (exitcode) {
+                *exitcode = child_proc->exitcode;
+            }
             int child_pid = child_proc->pid;
 
             // Recycle child
@@ -200,7 +202,7 @@ int wait(int *exitcode)
     }
 
     release_spinlock(&proc_lock);
-    printk("WARNING: No zombie child found for pid %d, must be something wrong.\n",
+    printk("(warn) No zombie child found for pid %d, must be something wrong.\n",
            this->pid);
     return -1;
 }
@@ -352,9 +354,14 @@ int fork()
     Proc *new_proc = create_proc();
     ASSERT(new_proc != NULL);
 
+    set_parent_to_this(new_proc);
+    new_proc->cwd = inodes.share(this->cwd);
+
     // Copy page table
+    acquire_spinlock(&this->pgdir.lock);
     copy_pgdir(&this->pgdir, &new_proc->pgdir);
     copy_sections(&this->pgdir.section_head, &new_proc->pgdir.section_head);
+    release_spinlock(&this->pgdir.lock);
 
     // Copy trap frame
     *(new_proc->ucontext) = *(this->ucontext);
@@ -368,12 +375,8 @@ int fork()
         }
     }
 
-    // Set parent and cwd
-    new_proc->parent = this;
-    new_proc->cwd = inodes.share(this->cwd);
-    // Set as runnable and insert into sched list
-    activate_proc(new_proc);
-
-    return new_proc->pid;
+    printk("Fork complete, new pid=%d\n", new_proc->pid);
+    // Start and return pid
+    return start_proc(new_proc, trap_return, 0);
     /* (Final) TODO END */
 }

@@ -16,19 +16,6 @@ void init_sections(ListNode *section_head)
 {
     /* (Final) TODO BEGIN */
     init_list_node(section_head);
-
-    // TODO: MOVE AWAY HEAP INIT
-    // Init HEAP segment
-    struct section *heap_section =
-            (struct section *)kalloc(sizeof(struct section));
-    // Heap with arbitrary start position, size is 0
-    heap_section->flags = ST_HEAP;
-    heap_section->begin = 0x0;
-    heap_section->end = heap_section->begin;
-    heap_section->fp = NULL;
-    init_list_node(&heap_section->stnode);
-    _insert_into_list(section_head, &heap_section->stnode);
-
     /* (Final) TODO END */
 }
 
@@ -78,12 +65,12 @@ u64 sbrk(i64 size)
     }
 
     if (heap_section == NULL) {
-        printk("Warning: proc %d has no heap section\n", this->pid);
+        printk("(warn) proc %d has no heap section\n", this->pid);
         return -1;
     }
 
     if (heap_section->end + size < heap_section->begin) {
-        printk("Warning: invalid heap shrinking size\n");
+        printk("(warn) invalid heap shrinking size\n");
         return -1;
     }
 
@@ -134,7 +121,6 @@ int pgfault_handler(u64 iss)
     // Ensure that `far` is valid
     if ((iss << 10) & 0x1) {
         printk("ERROR: Invalid FAR, cannot handle. \n");
-        exit(-1);
         return -1;
     }
 
@@ -154,9 +140,8 @@ int pgfault_handler(u64 iss)
     }
 
     if (containing_section == NULL) {
-        printk("Warning: Requested address (%llu) isn't inside a section! \n",
+        printk("(warn) Requested address (%llu) isn't inside a section! \n",
                addr);
-        exit(-1);
         return -1;
     }
 
@@ -185,15 +170,14 @@ int pgfault_handler(u64 iss)
                 u64 offset_in_section = page_addr - containing_section->begin;
                 inodes.read(containing_section->fp->ip, new_page,
                             containing_section->offset + offset_in_section,
-                            min(PAGE_SIZE, containing_section->length -
+                            MIN(PAGE_SIZE, containing_section->length -
                                                    offset_in_section));
                 inodes.unlock(containing_section->fp->ip);
             }
 
             return 0;
         } else {
-            printk("WARNING: Translation error not resolvable.\n");
-            exit(-1);
+            printk("(warn) Translation error not resolvable.\n");
             return -1;
         }
     }
@@ -205,28 +189,25 @@ int pgfault_handler(u64 iss)
 
         // Do a COW
         PTEntriesPtr pte = get_pte(pd, addr, false);
-        ASSERT(pte != NULL);
+        ASSERT(pte != NULL && (*pte & 0x1));
         void *old_page_addr = (void *)P2K(PTE_ADDRESS(*pte));
+        // printk("Doing COW on %llu\n", old_page_addr);
 
         // Allocate a new page and copy
         void *new_page = kalloc_page();
         if (!new_page) {
-            exit(-1);
             return -1;
         }
 
         // Copy the contents of the old page
         memcpy(new_page, old_page_addr, PAGE_SIZE);
+        // Ref to the old page will be released in vmmap
         vmmap(pd, page_addr, new_page, PTE_USER_DATA);
-
-        // Decrement ref count
-        kfree_page(old_page_addr);
         return 0;
     }
 
     // Permission fault, address size fault, etc
     printk("Failed to handle page fault, killing proc %d\n", thisproc()->pid);
-    exit(-1);
     return -1;
 
     /* (Final) TODO END */
@@ -240,9 +221,17 @@ void copy_sections(ListNode *from_head, ListNode *to_head)
         struct section *section = container_of(node, struct section, stnode);
 
         struct section *copied = kalloc(sizeof(struct section));
-        memcpy(copied, section, sizeof(struct section));
-        _insert_into_list(to_head, &copied->stnode);
+        copied->begin = section->begin;
+        copied->end = section->end;
+        copied->flags = section->flags;
+        copied->fp = NULL;
+        if (section->fp) {
+            copied->fp = section->fp;
+            copied->offset = section->offset;
+            copied->length = section->length;
+        }
 
+        _insert_into_list(to_head, &copied->stnode);
         node = node->next;
     }
     /* (Final) TODO END */

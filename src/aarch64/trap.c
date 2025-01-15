@@ -28,6 +28,8 @@ void trap_global_handler(UserContext *context)
 
     arch_reset_esr();
 
+    bool shall_kill = false;
+
     switch (ec) {
     case ESR_EC_UNKNOWN: {
         if (ir) {
@@ -44,7 +46,7 @@ void trap_global_handler(UserContext *context)
     case ESR_EC_IABORT_EL1:
     case ESR_EC_DABORT_EL0:
     case ESR_EC_DABORT_EL1: {
-        pgfault_handler(iss);
+        shall_kill = pgfault_handler(iss) != 0;
     } break;
     default: {
         printk("Unknown exception %llu, esr=%llu\n", ec, esr);
@@ -54,8 +56,10 @@ void trap_global_handler(UserContext *context)
 
     // TODO: stop killed process while returning to user space
     u64 mode_flag = GET_DIAF(context->spsr);
-    if (mode_flag == 0x0 && thisproc()->killed) {
-        printk("CPU %llu: Trapped called on killed process %d, calling exit. \n",
+    Proc* this = thisproc();
+    // Handle exit on unresolvable page fault or respond to kill
+    if (shall_kill || (mode_flag == 0x0 && this->killed)) {
+        printk("CPU %llu: Trapped on killed process %d, calling exit. \n",
                cpuid(), thisproc()->pid);
         exit(-1);
     }

@@ -120,7 +120,6 @@ PTEntriesPtr get_pte(struct pgdir *pgdir, u64 va, bool alloc)
 void init_pgdir(struct pgdir *pgdir)
 {
     init_spinlock(&pgdir->lock);
-    init_list_node(&pgdir->section_head);
 
     // Init root table
     pgdir->pt = kalloc_page();
@@ -164,29 +163,38 @@ void free_pgdir(struct pgdir *pgdir)
     }
 
     kfree_page(pgdir->pt);
+    pgdir->pt = NULL;
 }
 
-// Copy page table in a readonly manner for child proc
+// Copy page table with COW support accroding to the section defs
 void copy_pgdir(struct pgdir *src, struct pgdir *dest)
 {
     if (!src->pt) {
         return;
     }
 
-    for (u64 va = 0; va < VA_STOP; va += PAGE_SIZE) {
-        PTEntriesPtr src_pte = get_pte(src, va, false);
-        if (!src_pte || !CHECK_DESCRIPTOR(*src_pte)) {
-            continue;
+    ListNode *node = src->section_head.next;
+    // Look for heap section
+    while (node != &src->section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+
+        u64 page_base = PAGE_BASE(section->begin);
+        while (page_base < section->end) {
+            PTEntriesPtr src_pte = get_pte(src, page_base, false);
+            ASSERT(src_pte != NULL);
+
+            void *phys_page = share_page((void *)P2K(PTE_ADDRESS(*src_pte)));
+            vmmap(dest, page_base, phys_page, PTE_USER_DATA | PTE_RO);
+
+            // Change original pte to readonly
+            *src_pte |= PTE_RO;
+            page_base += PAGE_SIZE;
         }
 
-        PTEntriesPtr dest_pte = get_pte(dest, va, true);
-        ASSERT(dest != NULL);
-        u64 page_addr_physical = PTE_ADDRESS(*src_pte);
-        *dest_pte = page_addr_physical | PTE_USER_DATA | PTE_RO;
-
-        // Increment ref count of page
-        share_page((void *)P2K(page_addr_physical));
+        node = node->next;
     }
+
+    arch_tlbi_vmalle1is();
 }
 
 void attach_pgdir(struct pgdir *pgdir)
@@ -263,7 +271,7 @@ int copyout(struct pgdir *pd, void *va, void *p, usize len)
 
         char *page_addr = (char *)P2K(PTE_ADDRESS(*pte));
         u32 offset_in_page = va_offset - va_page_base;
-        usize copy_count = min(PAGE_SIZE - offset_in_page, len);
+        usize copy_count = MIN(PAGE_SIZE - offset_in_page, len);
 
         memcpy(page_addr + offset_in_page, source, copy_count);
         len -= copy_count;
