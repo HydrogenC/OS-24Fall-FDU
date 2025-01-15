@@ -47,6 +47,9 @@ static LogHeader header; // in-memory copy of log header block.
 
 static RefCount num_cached_blocks;
 
+// The block number from which the filesystem starts
+extern u64 fs_start;
+
 /**
     @brief a struct to maintain other logging states.
     
@@ -71,25 +74,25 @@ struct {
 // read the content from disk.
 static INLINE void device_read(Block *block)
 {
-    device->read(block->block_no, block->data);
+    device->read(fs_start + block->block_no, block->data);
 }
 
 // write the content back to disk.
 static INLINE void device_write(Block *block)
 {
-    device->write(block->block_no, block->data);
+    device->write(fs_start + block->block_no, block->data);
 }
 
 // read log header from disk.
 static INLINE void read_header()
 {
-    device->read(sblock->log_start, (u8 *)&header);
+    device->read(fs_start + sblock->log_start, (u8 *)&header);
 }
 
 // write log header back to disk.
 static INLINE void write_header()
 {
-    device->write(sblock->log_start, (u8 *)&header);
+    device->write(fs_start + sblock->log_start, (u8 *)&header);
 }
 
 // initialize a block struct.
@@ -226,7 +229,11 @@ void commit_log()
         }
 
         // Write to log area
-        device->write(sblock->log_start + i + 1, blk->data);
+        Block write_blk;
+        write_blk.block_no = sblock->log_start + i + 1;
+        memcpy(write_blk.data, blk->data, BLOCK_SIZE);
+        device_write(&write_blk);
+
         blk->pinned = false;
         release_spinlock(&lock);
     }
@@ -336,7 +343,7 @@ static void cache_sync(OpContext *ctx, Block *block)
 static void cache_end_op(OpContext *ctx)
 {
     // TODO
-    if(!ctx){
+    if (!ctx) {
         PANIC();
     }
 
@@ -349,7 +356,7 @@ static void cache_end_op(OpContext *ctx)
     log.num_ops--;
     if (log.num_ops > 0) {
         // There are still ops that haven't finished, do not commit
-        // But we can call wake up those awaiting `begin_op`s, 
+        // But we can call wake up those awaiting `begin_op`s,
         // since there's an updated estimation of empty log spaces
         post_all_sem(&log.sem);
         // printk("Ended op, remaining %d\n", log.num_ops);
@@ -373,7 +380,7 @@ static void cache_end_op(OpContext *ctx)
 void __debug_print_bitmap_block(Block *bitmap_block)
 {
     for (usize j = 0; j < BLOCK_SIZE; j += 8) {
-        u64 *num = (u64*)&(bitmap_block->data[j]);
+        u64 *num = (u64 *)&(bitmap_block->data[j]);
         printk("%llu ", *num);
     }
     printk("\n");
@@ -403,9 +410,10 @@ static usize cache_alloc(OpContext *ctx)
                 usize block_no = i + j;
 
                 // Use buffer as a zero-buffer to clear the block
-                u8 zero_buffer[BLOCK_SIZE];
-                memset(zero_buffer, 0, BLOCK_SIZE);
-                device->write(block_no, zero_buffer);
+                Block allocated_blk;
+                allocated_blk.block_no = block_no;
+                memset(allocated_blk.data, 0, BLOCK_SIZE);
+                device_write(&allocated_blk);
                 // printk("Allocating block %d\n", block_no);
                 return block_no;
             }
