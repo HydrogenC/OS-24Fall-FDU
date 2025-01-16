@@ -15,7 +15,8 @@
 #include <driver/memlayout.h>
 
 #define STACK_PAGE_COUNT 20
-#define STACK_BOTTOM_RESERVED 512
+// Leave space on bottom of cmdargs in case that the stack continues popping
+#define STACK_BOTTOM_RESERVED 128
 #define ALIGN_UP(addr, size) (((usize)(addr) + (size - 1)) & (-size))
 #define ALIGN_DOWN(addr, size) (((usize)(addr)) & (-size))
 
