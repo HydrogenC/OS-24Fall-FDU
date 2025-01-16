@@ -15,7 +15,9 @@
 #include <driver/memlayout.h>
 
 #define STACK_PAGE_COUNT 20
-#define ALIGN_UP(addr, size) (((usize)addr + (size - 1)) & (-size))
+#define STACK_BOTTOM_RESERVED 512
+#define ALIGN_UP(addr, size) (((usize)(addr) + (size - 1)) & (-size))
+#define ALIGN_DOWN(addr, size) (((usize)(addr)) & (-size))
 
 extern int fdalloc(struct file *f);
 extern void recycle_proc(Proc *proc);
@@ -179,15 +181,90 @@ failure:
     stack_section->fp = NULL;
     _insert_into_list(&new_pgdir.section_head, &stack_section->stnode);
 
-    // Initialize user stack
-    for (u64 q = stack_section->begin; q < stack_section->end; q += PAGE_SIZE) {
-        // Map to shared zero page
+    // Count arg and envvar size, estimate the initial stack size required
+    u64 argc = 0, envc = 0;
+    // Size of argc
+    u64 strings_size = 0;
+    if (argv) {
+        while (argv[argc]) {
+            strings_size += strlen(argv[argc++]) + 1;
+        }
+    }
+
+    if (envp) {
+        while (envp[envc]) {
+            strings_size += strlen(envp[envc++]) + 1;
+        }
+    }
+
+    // Total size of pointers
+    // argc + argv (len = argc+1) + envp (len = envc+1)
+    const u64 pointer_size = (1 + (argc + 1) + (envc + 1)) * sizeof(u64);
+
+    // Padding between pointers and strings to ensure that sp is 16-aligned
+    u64 padding_size = ALIGN_UP(strings_size, 8) - strings_size;
+    if ((strings_size + padding_size + pointer_size) % 16 != 0) {
+        padding_size += 8;
+        ASSERT((strings_size + padding_size + pointer_size) % 16 == 0);
+    }
+
+    // Since we have to store args and envp on stack, part of the stack has to be pre-allocated
+    // This is the stack size that has to be preallocated (page-aligned)
+    const u64 preallocated_stack_size = ALIGN_UP(
+            pointer_size + padding_size + strings_size + STACK_BOTTOM_RESERVED,
+            PAGE_SIZE);
+
+    // Initialize empty part of stack, preallocated part will be allocated in `copyout`
+    for (u64 q = stack_section->begin;
+         q < stack_section->end - preallocated_stack_size; q += PAGE_SIZE) {
+        // For empty stack pages, map to shared zero page, do COW
         vmmap(&new_pgdir, q, get_zero_page(), PTE_USER_DATA | PTE_RO);
     }
 
+    const u64 zero = 0;
+    // Start position of storing strings
+    u64 strings_pos = stack_section->end - STACK_BOTTOM_RESERVED;
+    // Put sp under string data, align to 8
+    u64 sp = strings_pos - strings_size - padding_size;
+
+    // envp[envc]
+    sp -= sizeof(char *);
+    copyout(&new_pgdir, (void *)sp, (void *)(&zero), sizeof(char *));
+
+    // Copy envp
+    for (i64 i = envc - 1; i >= 0; i--) {
+        /* code */
+        u32 len = strlen(envp[i]) + 1;
+        sp -= sizeof(char *);
+        strings_pos -= len;
+        copyout(&new_pgdir, (void *)strings_pos, (void *)envp[i], len);
+        copyout(&new_pgdir, (void *)sp, (void *)(&strings_pos), sizeof(char *));
+    }
+
+    // argv[argc]
+    sp -= sizeof(char *);
+    copyout(&new_pgdir, (void *)sp, (void *)(&zero), sizeof(char *));
+
+    // Copy args
+    for (i64 i = argc - 1; i >= 0; i--) {
+        /* code */
+        u32 len = strlen(argv[i]) + 1;
+        sp -= sizeof(char *);
+        strings_pos -= len;
+        copyout(&new_pgdir, (void *)strings_pos, (void *)argv[i], len);
+        copyout(&new_pgdir, (void *)sp, (void *)(&strings_pos), sizeof(char *));
+    }
+
+    // Copy argc
+    sp -= sizeof(argc);
+    copyout(&new_pgdir, (void *)sp, (void *)(&argc), sizeof(argc));
+
+    ASSERT(sp == stack_section->end - STACK_BOTTOM_RESERVED - pointer_size -
+                         strings_size - padding_size);
+    ASSERT(sp % 16 == 0);
+
     Proc *this = thisproc();
-    // TODO: Load argv and envp
-    this->ucontext->sp = stack_section->end - PAGE_SIZE;
+    this->ucontext->sp = sp;
     this->ucontext->elr = elf_header.e_entry;
 
     free_sections(&this->pgdir);

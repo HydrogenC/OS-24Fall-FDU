@@ -249,7 +249,7 @@ void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags)
 int copyout(struct pgdir *pd, void *va, void *p, usize len)
 {
     /* (Final) TODO BEGIN */
-    char *source = (char *)PAGE_BASE(p);
+    char *source = (char *)p;
     u64 va_offset = (u64)va;
 
     while (len > 0) {
