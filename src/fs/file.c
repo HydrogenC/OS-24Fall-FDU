@@ -91,6 +91,10 @@ void file_close(struct file *f)
     case FD_PIPE: {
         struct pipe *pipe = f->pipe;
         release_spinlock(&ftable.lock);
+
+        // A pipe file could only be either readable or writable
+        ASSERT(f->readable ^ f->writable);
+        pipe_close(pipe, f->writable);
         // TODO: Close the pipe
     } break;
     case FD_INODE: {
@@ -149,6 +153,7 @@ isize file_read(struct file *f, char *addr, isize n)
     } break;
     case FD_PIPE: {
         // TODO: pipe read
+        return pipe_read(f->pipe, (u64)addr, n);
     } break;
     default:
         break;
@@ -183,6 +188,7 @@ isize file_write(struct file *f, char *addr, isize n)
     } break;
     case FD_PIPE: {
         // TODO: pipe write
+        return pipe_write(f->pipe, (u64)addr, n);
     } break;
     default:
         break;

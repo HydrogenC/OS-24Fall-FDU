@@ -241,7 +241,7 @@ void setup_page(page_header *p_page, int tier)
 }
 
 // Get the block size tier of the given size
-int get_tier(unsigned long long size)
+int get_tier(usize size)
 {
     // Ceil size to power of 2
     int leading_zeros = __builtin_clzll(size - 1);
@@ -252,15 +252,16 @@ int get_tier(unsigned long long size)
     return MAX(0, trailing_zeros - 3);
 }
 
-void *kalloc(unsigned long long size)
+void *kalloc(usize size)
 {
     if (size == 0) {
         // Cannot allocate zero size
+        printk("(warn) allocating zero size. \n", size);
         return NULL;
     }
 
     if (size > 2048) {
-        printk("PANIC: %llu is larger than 2048. \n", size);
+        printk("(warn) cannot allocate %llu, which is larger than 2048. \n", size);
         return NULL;
     }
 

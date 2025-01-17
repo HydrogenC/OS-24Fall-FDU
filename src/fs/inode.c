@@ -164,15 +164,16 @@ static void inode_sync(OpContext *ctx, Inode *inode, bool do_write)
         // Write data to disk
         memcpy(&inodes[inode_index], &inode->entry, sizeof(InodeEntry));
         cache->sync(ctx, inode_block);
+        cache->release(inode_block);
     } else if (!inode->valid) {
         // Read data from disk if not present
         memcpy(&inode->entry, &inodes[inode_index], sizeof(InodeEntry));
         cache->release(inode_block);
         inode->valid = true;
+    }else{
+        // Do nothing if data is present and not `do_write`
+        cache->release(inode_block);
     }
-    // Do nothing if data is present and not `do_write`
-
-    cache->release(inode_block);
 }
 
 Inode *try_find_inode(usize inode_no)

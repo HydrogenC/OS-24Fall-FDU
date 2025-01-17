@@ -523,6 +523,40 @@ define_syscall(chdir, const char *path)
 define_syscall(pipe2, int pipefd[2], int flags)
 {
     /* (Final) TODO BEGIN */
+    File *f0, *f1;
+    if (pipe_alloc(&f0, &f1) < 0) {
+        return -1;
+    }
 
+    pipefd[0] = pipefd[1] = -1;
+    pipefd[0] = fdalloc(f0);
+    if (pipefd[0] < 0) {
+        goto failure;
+    }
+    
+    pipefd[1] = fdalloc(f1);
+    if (pipefd[1] < 0) {
+        goto failure;
+    }
+
+    return 0;
+
+failure:
+    pipe_close(f0->pipe, 0);
+    pipe_close(f0->pipe, 1);
+
+    if (pipefd[0] >= 0) {
+        sys_close(pipefd[0]);
+    } else {
+        file_close(f0);
+    }
+
+    if (pipefd[1] >= 0) {
+        sys_close(pipefd[1]);
+    } else {
+        file_close(f1);
+    }
+
+    return -1;
     /* (Final) TODO END */
 }

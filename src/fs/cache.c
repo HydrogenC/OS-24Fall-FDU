@@ -139,7 +139,6 @@ static void cache_evict()
 
         // Skip acquired and pinned blocks
         if (!current_blk->acquired && !current_blk->pinned) {
-            // printk("Evicting block No. %llu\n", current_blk->block_no);
             _detach_from_list(&current_blk->node);
             decrement_rc(&num_cached_blocks);
             kfree(current_blk);

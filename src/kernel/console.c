@@ -28,11 +28,15 @@ void console_init()
 isize console_write(Inode *ip, char *buf, isize n)
 {
     /* (Final) TODO BEGIN */
+    inodes.unlock(ip);
     acquire_spinlock(&cons.lock);
     for (isize i = 0; i < n; i++) {
         uart_put_char(buf[i]);
     }
     release_spinlock(&cons.lock);
+    inodes.lock(ip);
+
+    return n;
     /* (Final) TODO END */
 }
 
@@ -47,6 +51,7 @@ isize console_read(Inode *ip, char *dst, isize n)
     /* (Final) TODO BEGIN */
     // Remaining length to read
     isize len = n;
+    inodes.unlock(ip);
     acquire_spinlock(&cons.lock);
 
     while (len > 0) {
@@ -55,23 +60,20 @@ isize console_read(Inode *ip, char *dst, isize n)
             release_spinlock(&cons.lock);
             if (!wait_sem(&cons.sem)) {
                 // Process already killed
+                inodes.lock(ip);
                 return -1;
             }
             acquire_spinlock(&cons.lock);
         }
 
-        char c = cons.buf[cons.read_idx];
+        char c = cons.buf[cons.read_idx % IBUF_SIZE];
         cons.read_idx++;
-        cons.read_idx %= IBUF_SIZE;
 
         // EOF
         if (c == CTRL('D')) {
             if (len < n) {
                 // From xv6:
                 // Save ^D for next time, to make sure caller gets a 0-byte result.
-                if (cons.read_idx == 0) {
-                    cons.read_idx += IBUF_SIZE;
-                }
                 cons.read_idx--;
             }
             break;
@@ -86,7 +88,9 @@ isize console_read(Inode *ip, char *dst, isize n)
             break;
         }
     }
+
     release_spinlock(&cons.lock);
+    inodes.lock(ip);
     return n - len;
     /* (Final) TODO END */
 }
@@ -100,9 +104,6 @@ void console_intr(char c)
     // Backspace
     case '\x7f':
         if (cons.edit_idx != cons.write_idx) {
-            if (cons.edit_idx == 0) {
-                cons.edit_idx += IBUF_SIZE;
-            }
             cons.edit_idx--;
             uart_put_char('\b');
             uart_put_char(' ');
@@ -111,10 +112,7 @@ void console_intr(char c)
         break;
     case CTRL('U'):
         while (cons.edit_idx != cons.write_idx &&
-               cons.buf[cons.edit_idx - 1] != '\n') {
-            if (cons.edit_idx == 1) {
-                cons.edit_idx += IBUF_SIZE;
-            }
+               cons.buf[(cons.edit_idx + IBUF_SIZE - 1) % IBUF_SIZE] != '\n') {
             cons.edit_idx--;
             // Clear console
             uart_put_char('\b');
@@ -131,8 +129,7 @@ void console_intr(char c)
             c = '\n';
         }
 
-        cons.buf[cons.edit_idx++] = c;
-        cons.edit_idx %= IBUF_SIZE;
+        cons.buf[cons.edit_idx++ % IBUF_SIZE] = c;
         uart_put_char(c);
 
         // Flush

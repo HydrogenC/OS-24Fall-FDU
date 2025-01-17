@@ -34,6 +34,7 @@ int execve(const char *path, char *const argv[], char *const envp[])
 
     if (!inode) {
         bcache.end_op(&ctx);
+        printk("(warn) program file not found\n");
         return -1;
     }
 
@@ -264,7 +265,7 @@ failure:
     _detach_from_list(&new_pgdir.section_head);
     attach_pgdir(&this->pgdir);
 
-    // printk("Execve finished\n");
+    printk("Execve finished\n");
     return 0;
     /* (Final) TODO END */
 }
