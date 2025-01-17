@@ -7,23 +7,22 @@
 #include <common/string.h>
 
 // Reference: https://stackoverflow.com/questions/4840410/how-to-align-a-pointer-in-c
-#define ALIGN_UP_PTR(addr, size) (void *)(((usize)(addr) + (size - 1)) & (-size))
+#define ALIGN_UP_PTR(addr, size) \
+    (void *)(((usize)(addr) + (size - 1)) & (-size))
 #define ALIGN_DOWN_PTR(addr, size) (void *)(((usize)(addr)) & (-size))
 
 #define MIN_SIZE 8
+#define PAGE_COUNT ((PHYSTOP - EXTMEM) / PAGE_SIZE)
+#define PAGE_INDEX(ptr) (((u64)K2P(ptr) - EXTMEM) / PAGE_SIZE)
 
 RefCount kalloc_page_cnt;
 static SpinLock page_lock, block_lock;
-static int total_page_cnt;
+static int total_page_cnt = 0;
 
 extern char end[];
-static char *pages_start;
 static void *zero_page = NULL;
 
-// TODO: This shouldn't be hardcoded
-#define MAX_PAGE_COUNT 262000
-
-static struct page pages[MAX_PAGE_COUNT];
+static struct page pages[PAGE_COUNT];
 
 // Block sizes, in bytes
 const int block_sizes[] = { 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
@@ -44,11 +43,10 @@ static page_header *partial_list[9] = { NULL };
 
 void init_pages()
 {
-    pages_start = ALIGN_UP_PTR(end, PAGE_SIZE);
-
     // Stop addr in kernel space
-    char *kernel_stop = (char *)P2K(PHYSTOP);
-    for (char *i = pages_start; i + PAGE_SIZE <= kernel_stop; i += PAGE_SIZE) {
+    const char *kernel_stop = (char *)P2K(PHYSTOP);
+    for (char *i = ALIGN_UP_PTR(end, PAGE_SIZE); i <= kernel_stop - PAGE_SIZE;
+         i += PAGE_SIZE) {
         page_header *p_header = (page_header *)i;
 
         if (free_list) {
@@ -59,12 +57,12 @@ void init_pages()
         p_header->next = free_list;
         free_list = p_header;
 
-        init_rc(&pages[total_page_cnt++].ref);
+        u64 page_index = PAGE_INDEX(i);
+        init_rc(&pages[page_index].ref);
+        total_page_cnt++;
     }
 
-    // printk("Page start addr: %llu, registered pages: %d\n", (usize)pages_start,
-    //        index);
-    // printk("Size of header: %llu\n", sizeof(page_header));
+    printk("Page start addr: %llu, registered pages: %d\n", end, total_page_cnt);
 }
 
 void kinit()
@@ -96,7 +94,7 @@ void *kalloc_page()
     }
     p_page->next = p_page->prev = NULL;
 
-    u32 page_index = ((char *)p_page - pages_start) / PAGE_SIZE;
+    u64 page_index = PAGE_INDEX(p_page);
     ASSERT(pages[page_index].ref.count == 0);
     increment_rc(&pages[page_index].ref);
 
@@ -108,10 +106,16 @@ void *kalloc_page()
 
 void kfree_page(void *p)
 {
+    ASSERT((u64)p % PAGE_SIZE == 0);
+    if (zero_page != NULL && p == zero_page) {
+        // Ref counting is ignored on shared zero page
+        return;
+    }
+
     // Insert into free list
     acquire_spinlock(&page_lock);
 
-    u32 page_index = ((char *)p - pages_start) / PAGE_SIZE;
+    u64 page_index = PAGE_INDEX(p);
     ASSERT(pages[page_index].ref.count > 0);
     decrement_rc(&pages[page_index].ref);
     // Not the last user of this page, just return
@@ -329,12 +333,13 @@ void kfree(void *ptr)
 // Increment the ref count of the page
 void *share_page(void *ptr)
 {
+    ASSERT((u64)ptr % PAGE_SIZE == 0);
     // Reference counting is not applicable to shared zero page
-    if (ptr == zero_page) {
+    if (zero_page != NULL && ptr == zero_page) {
         return ptr;
     }
 
-    u32 page_index = ((char *)ptr - pages_start) / PAGE_SIZE;
+    u64 page_index = PAGE_INDEX(ptr);
     ASSERT(pages[page_index].ref.count > 0);
     increment_rc(&pages[page_index].ref);
     // printk("Ref to page %u is now %d\n", page_index, pages[page_index].ref.count);
@@ -350,7 +355,7 @@ WARN_RESULT void *get_zero_page()
         memset(zero_page, 0, PAGE_SIZE);
 
         // Set rc to a very large number to ensure that this page will never be freed
-        u32 page_index = ((char *)zero_page - pages_start) / PAGE_SIZE;
+        u64 page_index = PAGE_INDEX(zero_page);
         pages[page_index].ref.count = __INT_MAX__;
     }
 

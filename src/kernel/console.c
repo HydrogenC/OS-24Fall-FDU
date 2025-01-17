@@ -13,7 +13,6 @@ void console_init()
     init_spinlock(&cons.lock);
     init_sem(&cons.sem, 0);
 
-    // Set this to `IBUF_SIZE - 1` so that it could read index 0 after increment
     cons.read_idx = 0;
     cons.write_idx = 0;
     cons.edit_idx = 0;

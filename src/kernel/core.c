@@ -60,8 +60,7 @@ NO_RETURN void kernel_entry()
             (struct section *)kalloc(sizeof(struct section));
     code_section->begin = EXTMEM + (u64)(icode - icode_page);
     code_section->end = code_section->begin + (eicode - icode);
-    code_section->flags = ST_TEXT;
-    code_section->fp = NULL;
+    code_section->flags = 0;
     _insert_into_list(&proc->pgdir.section_head, &code_section->stnode);
 
     proc->cwd = inodes.share(inodes.root);

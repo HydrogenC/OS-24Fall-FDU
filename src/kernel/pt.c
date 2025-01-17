@@ -181,13 +181,17 @@ void copy_pgdir(struct pgdir *src, struct pgdir *dest)
         u64 page_base = PAGE_BASE(section->begin);
         while (page_base < section->end) {
             PTEntriesPtr src_pte = get_pte(src, page_base, false);
-            ASSERT(src_pte != NULL);
 
-            void *phys_page = share_page((void *)P2K(PTE_ADDRESS(*src_pte)));
-            vmmap(dest, page_base, phys_page, PTE_USER_DATA | PTE_RO);
+            // Skip unallocated pages
+            if (src_pte && CHECK_DESCRIPTOR(*src_pte)) {
+                void *phys_page =
+                        share_page((void *)P2K(PTE_ADDRESS(*src_pte)));
+                vmmap(dest, page_base, phys_page, PTE_USER_DATA | PTE_RO);
 
-            // Change original pte to readonly
-            *src_pte |= PTE_RO;
+                // Change original pte to readonly
+                *src_pte |= PTE_RO;
+            }
+
             page_base += PAGE_SIZE;
         }
 

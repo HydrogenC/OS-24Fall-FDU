@@ -85,16 +85,16 @@ int execve(const char *path, char *const argv[], char *const envp[])
         section->begin = program_header.p_vaddr;
         section->end = program_header.p_vaddr + program_header.p_memsz;
         section->flags = 0;
-        section->fp = NULL;
 
         switch (program_header.p_flags) {
         case PF_R | PF_W:
-            // Data or BSS
-            section->flags = ST_DATA;
+            // RW section
+            // section->flags = ST_DATA;
             break;
         case PF_R | PF_X:
+            // RO section
             ASSERT(program_header.p_memsz == program_header.p_filesz);
-            section->flags = ST_TEXT;
+            // section->flags = ST_TEXT;
             break;
         default:
             printk("(warn) unrecognizable section type\n");
@@ -176,7 +176,7 @@ failure:
     struct section *stack_section =
             (struct section *)kalloc(sizeof(struct section));
     // Initialize a 80k heap
-    stack_section->flags = ST_FILE;
+    stack_section->flags = ST_STACK;
     stack_section->end = PHYSTOP;
     stack_section->begin = stack_section->end - STACK_PAGE_COUNT * PAGE_SIZE;
     stack_section->fp = NULL;
@@ -207,19 +207,6 @@ failure:
     if ((strings_size + padding_size + pointer_size) % 16 != 0) {
         padding_size += 8;
         ASSERT((strings_size + padding_size + pointer_size) % 16 == 0);
-    }
-
-    // Since we have to store args and envp on stack, part of the stack has to be pre-allocated
-    // This is the stack size that has to be preallocated (page-aligned)
-    const u64 preallocated_stack_size = ALIGN_UP(
-            pointer_size + padding_size + strings_size + STACK_BOTTOM_RESERVED,
-            PAGE_SIZE);
-
-    // Initialize empty part of stack, preallocated part will be allocated in `copyout`
-    for (u64 q = stack_section->begin;
-         q < stack_section->end - preallocated_stack_size; q += PAGE_SIZE) {
-        // For empty stack pages, map to shared zero page, do COW
-        vmmap(&new_pgdir, q, get_zero_page(), PTE_USER_DATA | PTE_RO);
     }
 
     const u64 zero = 0;

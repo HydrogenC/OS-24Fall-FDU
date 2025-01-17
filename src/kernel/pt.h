@@ -11,6 +11,7 @@
 #define ST_TEXT  (ST_FILE | ST_RO)  // Section is text
 #define ST_DATA  ST_FILE            // Section is data
 #define ST_BSS   ST_FILE            // Section is bss
+#define ST_STACK (1<<4)             // Section is stack
 
 struct pgdir {
     PTEntriesPtr pt;

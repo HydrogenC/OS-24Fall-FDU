@@ -139,7 +139,7 @@ int pgfault_handler(u64 iss)
         node = node->next;
     }
 
-    if (containing_section == NULL) {
+    if (!containing_section) {
         printk("(warn) Requested address (%llu) isn't inside a section! \n",
                addr);
         return -1;
@@ -155,7 +155,8 @@ int pgfault_handler(u64 iss)
     if ((dfsc >> 2) == 0x1) {
         // For lazy-allocated or file-backed sections, allocate physical page
         if (containing_section->flags & ST_HEAP ||
-            containing_section->fp != NULL) {
+            containing_section->flags & ST_STACK ||
+            containing_section->flags & ST_FILE) {
             void *new_page = kalloc_page();
             if (!new_page) {
                 return -1;
@@ -164,7 +165,11 @@ int pgfault_handler(u64 iss)
             vmmap(pd, page_addr, new_page, PTE_USER_DATA);
 
             // Read content from file
-            if (containing_section->fp != NULL) {
+            if (containing_section->flags & ST_FILE) {
+                if (!containing_section->fp) {
+                    printk("(warn) file-backed section pointing to NULL file.\n");
+                    return -1;
+                }
                 inodes.lock(containing_section->fp->ip);
 
                 u64 offset_in_section = page_addr - containing_section->begin;
@@ -224,8 +229,10 @@ void copy_sections(ListNode *from_head, ListNode *to_head)
         copied->begin = section->begin;
         copied->end = section->end;
         copied->flags = section->flags;
-        copied->fp = NULL;
-        if (section->fp) {
+        if (section->flags & ST_FILE) {
+            if (!section->fp) {
+                printk("(warn) section is marked as file-backed, but no file is referenced\n");
+            }
             copied->fp = section->fp;
             copied->offset = section->offset;
             copied->length = section->length;
