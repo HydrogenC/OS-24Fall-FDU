@@ -13,6 +13,13 @@
 #define ST_DATA  ST_FILE            // Section is data
 #define ST_BSS   ST_FILE            // Section is bss
 #define ST_STACK (1<<4)             // Section is stack
+#define ST_MMAP  (1<<5)
+#define ST_MMAP_PRIVATE ST_MMAP
+#define ST_MMAP_SHARED  (ST_MMAP | ST_RO)
+
+// Reference: https://wenboshen.org/posts/2018-09-09-page-table
+// Check if the entry is valid (the lowest bit of invalid descriptors is 0)
+#define CHECK_DESCRIPTOR(entry) ((entry) & 0x1)
 
 struct pgdir {
     PTEntriesPtr pt;

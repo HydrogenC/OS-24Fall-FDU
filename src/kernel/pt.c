@@ -17,10 +17,6 @@ VIRTUAL ADDR LAYOUT:
 [30:38] L1 Index (9 bits, 512 entries)
 [39:47] L0 Index (9 bits, 512 entries)
 */
-
-// Reference: https://wenboshen.org/posts/2018-09-09-page-table
-// Check if the entry is valid (the lowest bit of invalid descriptors is 0)
-#define CHECK_DESCRIPTOR(entry) ((entry) & 0x1)
 #define VA_STOP 0xFFFFFFFFFFFF
 
 PTEntry construct_table_descriptor(PTEntriesPtr next_level_addr)
@@ -302,8 +298,11 @@ int load_uvm(struct pgdir *pd, u64 va, Inode *ip, usize offset, usize len)
         u64 va_page_base = PAGE_BASE(va_pos);
         u64 va_offset_in_page = va_pos - va_page_base;
         u32 read_count = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_loaded);
-        read_count = inodes.read(ip, new_page + va_offset_in_page, offset,
-                                 read_count);
+        if (inodes.read(ip, new_page + va_offset_in_page, offset, read_count) !=
+            read_count) {
+            printk("(warn) read failure when loading uvm\n");
+            return -1;
+        }
         vmmap(pd, va_page_base, new_page, PTE_USER_DATA);
 
         bytes_loaded += read_count;

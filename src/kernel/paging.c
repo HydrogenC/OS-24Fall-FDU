@@ -27,6 +27,10 @@ void free_sections(struct pgdir *pd)
     while (node != &pd->section_head) {
         struct section *section = container_of(node, struct section, stnode);
         ListNode *next = node->next;
+        
+        if(section->flags == ST_MMAP_SHARED && (section->prot & 2 /* PROT_WRITE */)){
+            write_back(pd, section->fp, section->begin, section->offset, section->length);
+        }
 
         if (section->fp) {
             file_close(section->fp);
@@ -172,9 +176,18 @@ int pgfault_handler(u64 iss)
 
             // Read content from file
             if (containing_section->fp) {
-                inodes.lock(containing_section->fp->ip);
-                load_uvm(pd, containing_section->begin, containing_section->fp->ip, containing_section->offset, containing_section->length);
-                inodes.unlock(containing_section->fp->ip);
+                ASSERT((containing_section->flags & ST_FILE) ||
+                       (containing_section->flags & ST_MMAP));
+                u64 flags = PTE_USER_DATA;
+                if ((containing_section->flags & ST_MMAP) &&
+                    containing_section->prot == 1 /* PROT_READ */) {
+                    flags |= PTE_RO;
+                } else if (containing_section->flags == ST_MMAP_PRIVATE) {
+                    flags |= PTE_RO;
+                }
+                map_file(pd, containing_section->fp, containing_section->begin,
+                         containing_section->offset, containing_section->length,
+                         flags);
             }
 
             release_spinlock(&p->pgdir.lock);
@@ -191,11 +204,17 @@ int pgfault_handler(u64 iss)
         // Check `WnR` bit, this fault should be caused by a write command
         ASSERT(iss & 0x40);
 
+        if ((containing_section->flags & ST_MMAP) &&
+            containing_section->prot == 1 /* PROT_READ */) {
+            printk("(warn) attempting to write readonly mmap.\n");
+            release_spinlock(&p->pgdir.lock);
+            return -1;
+        }
+
         // Do a COW
         PTEntriesPtr pte = get_pte(pd, addr, false);
         ASSERT(pte != NULL && (*pte & 0x1));
         void *old_page_addr = (void *)P2K(PTE_ADDRESS(*pte));
-        // printk("Doing COW on %llu\n", old_page_addr);
 
         // Allocate a new page and copy
         void *new_page = kalloc_page();
@@ -242,4 +261,70 @@ void copy_sections(ListNode *from_head, ListNode *to_head)
         node = node->next;
     }
     /* (Final) TODO END */
+}
+
+int map_file(struct pgdir *pd, File *f, u64 va, usize offset, usize len,
+             u64 flags)
+{
+    usize bytes_read = 0;
+    u64 va_pos = va;
+    f->off = offset;
+
+    while (bytes_read < len) {
+        char *new_page = kalloc_page();
+        memset(new_page, 0, PAGE_SIZE);
+
+        u64 va_page_base = PAGE_BASE(va_pos);
+        u64 va_offset_in_page = va_pos - va_page_base;
+        u32 write_count = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_read);
+
+        if (file_read(f, new_page + va_offset_in_page, write_count) !=
+            write_count) {
+            printk("(warn) read failure when reading file to memory\n");
+            return -1;
+        }
+        vmmap(pd, va_page_base, new_page, flags);
+
+        bytes_read += write_count;
+        va_pos += write_count;
+    }
+
+    return bytes_read;
+}
+
+int write_back(struct pgdir *pd, File *f, u64 va, usize offset, usize len)
+{
+    usize bytes_written = 0;
+    u64 va_pos = va;
+    f->off = offset;
+
+    while (bytes_written < len) {
+        char *new_page = kalloc_page();
+        memset(new_page, 0, PAGE_SIZE);
+
+        u64 va_page_base = PAGE_BASE(va_pos);
+        PTEntriesPtr pte = get_pte(pd, va_page_base, false);
+
+        if (!pte || !CHECK_DESCRIPTOR(*pte)) {
+            printk("(warn) invalid page encountered while writing back\n");
+            return -1;
+        }
+
+        char *phys_addr = (char *)P2K(PTE_ADDRESS(*pte));
+
+        u64 va_offset_in_page = va_pos - va_page_base;
+        u32 write_count =
+                MIN(PAGE_SIZE - va_offset_in_page, len - bytes_written);
+
+        if (file_write(f, phys_addr + va_offset_in_page, write_count) !=
+            write_count) {
+            printk("(warn) write failure when writing back\n");
+            return -1;
+        }
+
+        bytes_written += write_count;
+        va_pos += write_count;
+    }
+
+    return bytes_written;
 }

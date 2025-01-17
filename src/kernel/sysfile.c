@@ -87,18 +87,179 @@ define_syscall(ioctl, int fd, u64 request)
     return 0;
 }
 
+#define ALIGN_UP(addr, size) (((usize)(addr) + (size - 1)) & (-size))
+#define ALIGN_DOWN(addr, size) (((usize)(addr)) & (-size))
+
 define_syscall(mmap, void *addr, int length, int prot, int flags, int fd,
                int offset)
 {
     /* (Final) TODO BEGIN */
+    File *f = fd2file(fd);
 
+    if (!f) {
+        printk("(warn) mmap: file doesn't exist! \n");
+        return -1;
+    }
+
+    // Check permission
+    if ((flags & PROT_WRITE) && flags != MAP_PRIVATE && !f->writable) {
+        printk("(warn) mmap: creating shared writable mmap but file isn't writable! \n");
+        return -1;
+    }
+
+    Proc *this = thisproc();
+
+    acquire_spinlock(&this->pgdir.lock);
+    u64 begin, end;
+    if (!addr) {
+        // Start to search from 0x70000000, which is between heap and stack
+        bool valid = false;
+        begin = 0x70000000;
+        end = begin + length;
+
+        // Find unoccupied memory area
+        while (!valid) {
+            valid = true;
+            ListNode *node = this->pgdir.section_head.next;
+            while (node != &this->pgdir.section_head) {
+                struct section *section =
+                        container_of(node, struct section, stnode);
+                if (section->begin < end && section->end > begin) {
+                    begin = ALIGN_UP(section->end, PAGE_SIZE);
+                    end = begin + length;
+                    valid = false;
+                    break;
+                }
+            }
+        }
+
+        if (!valid) {
+            release_spinlock(&this->pgdir.lock);
+            printk("(warn) cannot find appropriate space for mmap\n");
+            return -1;
+        }
+    } else {
+        begin = (u64)addr;
+        end = begin + length;
+
+        ListNode *node = this->pgdir.section_head.next;
+        while (node != &this->pgdir.section_head) {
+            struct section *section =
+                    container_of(node, struct section, stnode);
+            if (section->begin < end && section->end > begin) {
+                release_spinlock(&this->pgdir.lock);
+                printk("(warn) given address invalid since it intersects with existing sections\n");
+                return -1;
+            }
+        }
+    }
+
+    struct section *map_section =
+            (struct section *)kalloc(sizeof(struct section));
+
+    map_section->begin = begin;
+    map_section->end = end;
+    map_section->flags =
+            (flags == MAP_PRIVATE ? ST_MMAP_PRIVATE : ST_MMAP_SHARED);
+    map_section->fp = file_dup(f);
+    map_section->offset = offset;
+    map_section->length = length;
+    map_section->prot = prot;
+
+    _insert_into_list(&this->pgdir.section_head, &map_section->stnode);
+    release_spinlock(&this->pgdir.lock);
+
+    return begin;
     /* (Final) TODO END */
 }
 
 define_syscall(munmap, void *addr, size_t length)
 {
     /* (Final) TODO BEGIN */
+    Proc *this = thisproc();
 
+    acquire_spinlock(&this->pgdir.lock);
+    u64 begin, end;
+    // Start to search from 0x70000000, which is between heap and stack
+    bool valid = false;
+    begin = 0x70000000;
+    end = begin + length;
+
+    // Find unoccupied memory area
+    struct section *mapped_section = NULL;
+    while (!valid) {
+        valid = true;
+        ListNode *node = this->pgdir.section_head.next;
+        while (node != &this->pgdir.section_head) {
+            struct section *section =
+                    container_of(node, struct section, stnode);
+            if (section->begin == (u64)addr) {
+                mapped_section = section;
+                break;
+            }
+        }
+    }
+
+    if (!mapped_section || !mapped_section->fp) {
+        // No effect if mapping doesn't exist
+        release_spinlock(&this->pgdir.lock);
+        return 0;
+    }
+
+    bool free_whole_section = false;
+    if (length >= mapped_section->end - mapped_section->begin) {
+        length = mapped_section->end - mapped_section->begin;
+        free_whole_section = true;
+    }
+
+    // Only write back public mappings
+    if (mapped_section->flags == ST_MMAP_SHARED && (mapped_section->prot & PROT_WRITE)) {
+        write_back(&this->pgdir, mapped_section->fp, mapped_section->begin,
+                   mapped_section->offset, length);
+    }
+
+    u64 va = ALIGN_DOWN(mapped_section->begin, PAGE_SIZE);
+    if (free_whole_section) {
+        while (va < mapped_section->end) {
+            PTEntriesPtr pte = *get_pte(&this->pgdir, va, false);
+            if (!pte) {
+                continue;
+            }
+
+            if (CHECK_DESCRIPTOR(*pte)) {
+                void *old_page = (void *)P2K(PTE_ADDRESS(*pte));
+                kfree_page(old_page);
+            }
+
+            *pte = NULL;
+        }
+
+        _detach_from_list(mapped_section);
+        file_close(mapped_section->fp);
+        kfree(mapped_section);
+    } else {
+        while (va + PAGE_SIZE <= mapped_section->begin + length) {
+            PTEntriesPtr pte = *get_pte(&this->pgdir, va, false);
+            if (!pte) {
+                continue;
+            }
+
+            if (CHECK_DESCRIPTOR(*pte)) {
+                void *old_page = (void *)P2K(PTE_ADDRESS(*pte));
+                kfree_page(old_page);
+            }
+
+            *pte = NULL;
+        }
+
+        mapped_section->begin += length;
+        mapped_section->offset += length;
+        mapped_section->length -= length;
+    }
+
+    arch_tlbi_vmalle1is();
+    release_spinlock(&this->pgdir.lock);
+    return 0;
     /* (Final) TODO END */
 }
 
@@ -533,7 +694,7 @@ define_syscall(pipe2, int pipefd[2], int flags)
     if (pipefd[0] < 0) {
         goto failure;
     }
-    
+
     pipefd[1] = fdalloc(f1);
     if (pipefd[1] < 0) {
         goto failure;
