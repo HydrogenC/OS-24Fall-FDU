@@ -28,6 +28,10 @@ void free_sections(struct pgdir *pd)
         struct section *section = container_of(node, struct section, stnode);
         ListNode *next = node->next;
 
+        if (section->fp) {
+            file_close(section->fp);
+        }
+
         _detach_from_list(node);
         kfree(section);
         node = next;
@@ -157,8 +161,7 @@ int pgfault_handler(u64 iss)
     if ((dfsc >> 2) == 0x1) {
         // For lazy-allocated or file-backed sections, allocate physical page
         if (containing_section->flags & ST_HEAP ||
-            containing_section->flags & ST_STACK ||
-            containing_section->flags & ST_FILE) {
+            containing_section->flags & ST_STACK || containing_section->fp) {
             void *new_page = kalloc_page();
             if (!new_page) {
                 release_spinlock(&p->pgdir.lock);
@@ -168,19 +171,9 @@ int pgfault_handler(u64 iss)
             vmmap(pd, page_addr, new_page, PTE_USER_DATA);
 
             // Read content from file
-            if (containing_section->flags & ST_FILE) {
-                if (!containing_section->fp) {
-                    printk("(warn) file-backed section pointing to NULL file.\n");
-                    release_spinlock(&p->pgdir.lock);
-                    return -1;
-                }
+            if (containing_section->fp) {
                 inodes.lock(containing_section->fp->ip);
-
-                u64 offset_in_section = page_addr - containing_section->begin;
-                inodes.read(containing_section->fp->ip, new_page,
-                            containing_section->offset + offset_in_section,
-                            MIN(PAGE_SIZE, containing_section->length -
-                                                   offset_in_section));
+                load_uvm(pd, containing_section->begin, containing_section->fp->ip, containing_section->offset, containing_section->length);
                 inodes.unlock(containing_section->fp->ip);
             }
 
@@ -238,11 +231,9 @@ void copy_sections(ListNode *from_head, ListNode *to_head)
         copied->begin = section->begin;
         copied->end = section->end;
         copied->flags = section->flags;
-        if (section->flags & ST_FILE) {
-            if (!section->fp) {
-                printk("(warn) section is marked as file-backed, but no file is referenced\n");
-            }
-            copied->fp = section->fp;
+        copied->fp = NULL;
+        if (section->fp) {
+            copied->fp = file_dup(section->fp);
             copied->offset = section->offset;
             copied->length = section->length;
         }

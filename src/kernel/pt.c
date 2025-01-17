@@ -286,3 +286,30 @@ int copyout(struct pgdir *pd, void *va, void *p, usize len)
     return 0;
     /* (Final) TODO END */
 }
+
+/*
+ * Copy len bytes from inode ip (from given offset) to user address va. 
+ * Name of this function is taken from xv6
+ */
+int load_uvm(struct pgdir *pd, u64 va, Inode *ip, usize offset, usize len)
+{
+    usize bytes_loaded = 0;
+    u64 va_pos = va;
+    while (bytes_loaded < len) {
+        char *new_page = kalloc_page();
+        memset(new_page, 0, PAGE_SIZE);
+
+        u64 va_page_base = PAGE_BASE(va_pos);
+        u64 va_offset_in_page = va_pos - va_page_base;
+        u32 read_count = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_loaded);
+        read_count = inodes.read(ip, new_page + va_offset_in_page, offset,
+                                 read_count);
+        vmmap(pd, va_page_base, new_page, PTE_USER_DATA);
+
+        bytes_loaded += read_count;
+        offset += read_count;
+        va_pos += read_count;
+    }
+
+    return 0;
+}

@@ -3,6 +3,7 @@
 #include <aarch64/mmu.h>
 #include <common/spinlock.h>
 #include <common/list.h>
+#include <fs/inode.h>
 
 #define ST_FILE  1                  // File-backed
 #define ST_SWAP  (1<<1)             // Unused
@@ -26,3 +27,4 @@ void copy_pgdir(struct pgdir *src, struct pgdir *dest);
 void attach_pgdir(struct pgdir *pgdir);
 void vmmap(struct pgdir *pd, u64 va, void *ka, u64 flags);
 int copyout(struct pgdir *pd, void *va, void *p, usize len);
+int load_uvm(struct pgdir *pd, u64 va, Inode *ip, usize offset, usize len);

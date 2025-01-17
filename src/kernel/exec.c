@@ -87,17 +87,17 @@ int execve(const char *path, char *const argv[], char *const envp[])
         section->begin = program_header.p_vaddr;
         section->end = program_header.p_vaddr + program_header.p_memsz;
         section->flags = 0;
+        section->fp = NULL;
 
         switch (program_header.p_flags) {
         case PF_R | PF_W:
             // RW section
-            // section->flags = ST_DATA;
+            section->flags = ST_DATA;
             break;
         case PF_R | PF_X:
             // RO section
             ASSERT(program_header.p_memsz == program_header.p_filesz);
-            section->flags |= ST_RO;
-            // section->flags = ST_TEXT;
+            section->flags = ST_TEXT;
             break;
         default:
             printk("(warn) unrecognizable section type\n");
@@ -108,45 +108,36 @@ int execve(const char *path, char *const argv[], char *const envp[])
         heap_start = MAX(heap_start, section->end);
 
         // TODO: Use file section lazy loading when possible
-        usize bytes_loaded = 0;
-        u64 va_pos = section->begin;
-        u64 file_offset = program_header.p_offset;
-        while (bytes_loaded < program_header.p_filesz) {
-            char *new_page = kalloc_page();
+        if (program_header.p_filesz == program_header.p_memsz) {
+            // Lazy loading for possible sections
+            struct file *f = file_alloc();
+            f->ip = inodes.share(inode);
+            f->ref = 1;
+            f->type = FD_INODE;
+            f->readable = true;
+            f->writable = false;
+            f->off = 0;
 
-            u64 va_page_base = PAGE_BASE(va_pos);
-            u64 va_offset_in_page = va_pos - va_page_base;
-            u32 read_count = MIN(PAGE_SIZE - va_offset_in_page,
-                                 program_header.p_filesz - bytes_loaded);
-            read_count = inodes.read(inode, new_page + va_offset_in_page,
-                                     file_offset, read_count);
-            vmmap(&new_pgdir, va_page_base, new_page, PTE_USER_DATA);
+            section->fp = f;
+            section->offset = program_header.p_offset;
+            section->length = program_header.p_filesz;
+        } else {
+            // Load section from file to user memory space
+            load_uvm(&new_pgdir, section->begin, inode, program_header.p_offset,
+                     program_header.p_filesz);
+            u64 va_pos = ALIGN_UP(section->begin + program_header.p_filesz,
+                                  PAGE_SIZE);
 
-            bytes_loaded += read_count;
-            file_offset += read_count;
-            va_pos += read_count;
+            // BSS section
+            if (program_header.p_filesz < program_header.p_memsz) {
+                ASSERT(va_pos % PAGE_SIZE == 0);
+                while (va_pos < section->end) {
+                    // Map shared zero page
+                    vmmap(&new_pgdir, va_pos, get_zero_page(),
+                          PTE_USER_DATA | PTE_RO);
 
-            // If there's BSS after file content, then fill remaining page with zero
-            if (bytes_loaded == program_header.p_filesz &&
-                bytes_loaded < program_header.p_memsz && va_pos % 4096 != 0) {
-                va_offset_in_page = va_pos - PAGE_BASE(va_pos);
-                u64 fill_count = PAGE_SIZE - va_offset_in_page;
-                memset(new_page + va_offset_in_page, 0, fill_count);
-                bytes_loaded += fill_count;
-                va_pos += fill_count;
-            }
-        }
-
-        // BSS section
-        if (program_header.p_filesz < program_header.p_memsz) {
-            ASSERT(va_pos % PAGE_SIZE == 0);
-            while (bytes_loaded < program_header.p_memsz) {
-                // Map shared zero page
-                vmmap(&new_pgdir, va_pos, get_zero_page(),
-                      PTE_USER_DATA | PTE_RO);
-
-                bytes_loaded += PAGE_SIZE;
-                va_pos += PAGE_SIZE;
+                    va_pos += PAGE_SIZE;
+                }
             }
         }
 
