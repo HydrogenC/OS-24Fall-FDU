@@ -20,11 +20,7 @@ NO_RETURN void idle_entry()
             break;
         arch_with_trap
         {
-            // Note: when using `arch_wfi`, there are conditions where virtio interruptions doesn't
-            // trigger virtio interruption handler, especially when there are concurrent requests. 
-            // However, using `arch_wfe` instead resolves this issue. 
-            // It's kinda weird, but I don't know how to fix this, so I applied this workaround. 
-            arch_wfe();
+            arch_wfi();
         }
     }
     set_cpu_off();

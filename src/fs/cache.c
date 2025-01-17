@@ -296,10 +296,11 @@ static void cache_begin_op(OpContext *ctx)
     while (log.committing ||
            header.num_blocks + (log.num_ops + 1) * OP_MAX_NUM_BLOCKS >
                    LOG_MAX_SIZE) {
+        _lock_sem(&log.sem);
         release_spinlock(&log.lock);
         // Process already killed, no op required any more
         // printk("Begin op waiting...\n");
-        if (!wait_sem(&log.sem)) {
+        if (!_wait_sem(&log.sem, 1)) {
             return;
         }
         acquire_spinlock(&log.lock);

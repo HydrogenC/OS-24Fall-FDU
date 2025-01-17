@@ -102,8 +102,9 @@ int pipe_write(Pipe *pi, u64 addr, int n)
     while (count < n) {
         // Already full
         while (pi->nwrite == pi->nread + PIPE_SIZE) {
+            _lock_sem(&pi->wlock);
             release_spinlock(&pi->lock);
-            if (!pi->readopen || !wait_sem(&pi->wlock)) {
+            if (!pi->readopen || !_wait_sem(&pi->wlock, 1)) {
                 // Process already killed or read pipe closed
                 return -1;
             }
@@ -134,8 +135,9 @@ int pipe_read(Pipe *pi, u64 addr, int n)
 
     // Wait for pending data
     while (pi->nwrite == pi->nread && pi->writeopen) {
+        _lock_sem(&pi->rlock);
         release_spinlock(&pi->lock);
-        if (!wait_sem(&pi->rlock)) {
+        if (!_wait_sem(&pi->rlock, 1)) {
             // Process already killed or read pipe closed
             return -1;
         }

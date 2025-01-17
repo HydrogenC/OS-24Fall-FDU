@@ -213,6 +213,17 @@ static void update_this_proc(Proc *p)
     reset_timer();
 }
 
+void __dump_curr_proc()
+{
+    for (int i = 0; i < NCPU; i++) {
+        if (cpus[i].sched.this_proc->idle) {
+            printk("curr: cpu %d, idle\n", i);
+        } else {
+            printk("curr: cpu %d, pid=%d\n", i, cpus[i].sched.this_proc->pid);
+        }
+    }
+}
+
 // A simple scheduler.
 // You are allowed to replace it with whatever you like.
 // call with sched_lock
@@ -238,10 +249,12 @@ void sched(enum procstate new_state)
     _rb_erase(&next->schinfo.sched_node, &sched_tree);
 
     /*
-    if (next->pid > 1) {
-        printk("CPU %llu: Taking on proc with pid %d as next, time elapsed = %llu. \n",
-               cpuid(), next->pid,
-               get_timestamp_ms() - next->schinfo.timestamp);
+    if (next->pid != this->pid) {
+        if (next->idle)
+            printk("cpu %llu: idle\n", cpuid());
+        else
+            printk("cpu %llu: pid=%d, time=%llu\n", cpuid(), next->pid,
+                   get_timestamp_ms() - next->schinfo.timestamp);
     }
     */
 

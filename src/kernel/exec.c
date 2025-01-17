@@ -26,7 +26,8 @@ extern void recycle_proc(Proc *proc);
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     /* (Final) TODO BEGIN */
-    printk("Execve begin\n");
+    int id = thisproc()->pid;
+    printk("execve %d begin\n", id);
 
     OpContext ctx;
     bcache.begin_op(&ctx);
@@ -95,6 +96,7 @@ int execve(const char *path, char *const argv[], char *const envp[])
         case PF_R | PF_X:
             // RO section
             ASSERT(program_header.p_memsz == program_header.p_filesz);
+            section->flags |= ST_RO;
             // section->flags = ST_TEXT;
             break;
         default:

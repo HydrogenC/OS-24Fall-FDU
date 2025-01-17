@@ -57,8 +57,9 @@ isize console_read(Inode *ip, char *dst, isize n)
     while (len > 0) {
         // Nothing new to read
         while (cons.read_idx == cons.write_idx) {
+            _lock_sem(&cons.sem);
             release_spinlock(&cons.lock);
-            if (!wait_sem(&cons.sem)) {
+            if (!_wait_sem(&cons.sem, 1)) {
                 // Process already killed
                 inodes.lock(ip);
                 return -1;

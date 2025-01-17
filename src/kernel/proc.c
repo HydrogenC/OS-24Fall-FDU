@@ -375,7 +375,7 @@ int fork()
         }
     }
 
-    // printk("Fork complete, new pid=%d\n", new_proc->pid);
+    printk("fork pid=%d\n", new_proc->pid);
     // Start and return pid
     return start_proc(new_proc, trap_return, 0);
     /* (Final) TODO END */
