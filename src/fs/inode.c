@@ -91,7 +91,7 @@ static usize inode_alloc(OpContext *ctx, InodeType type)
     ASSERT(type != INODE_INVALID);
 
     // TODO
-    Block *inode_block = cache->acquire(to_block_no(1));
+    Block *inode_block = cache->acquire(to_block_no(ROOT_INODE_NO));
     for (usize i = 1; i < sblock->num_inodes; i++) {
         // If it's the first inode within block, load the block
         if (i % INODE_PER_BLOCK == 0) {
@@ -170,7 +170,7 @@ static void inode_sync(OpContext *ctx, Inode *inode, bool do_write)
         memcpy(&inode->entry, &inodes[inode_index], sizeof(InodeEntry));
         cache->release(inode_block);
         inode->valid = true;
-    }else{
+    } else {
         // Do nothing if data is present and not `do_write`
         cache->release(inode_block);
     }
@@ -273,7 +273,7 @@ static void inode_put(OpContext *ctx, Inode *inode)
         if (inode->entry.num_links == 0) {
             inode_clear(ctx, inode);
             // Set inode entry as unused
-            inode->entry.type = 0;
+            inode->entry.type = INODE_INVALID;
             inode_sync(ctx, inode, true);
             inode->valid = false;
         }
@@ -355,6 +355,7 @@ static usize inode_map(OpContext *ctx, Inode *inode, usize offset,
 
             indirect_addrs[block_index] = cache->alloc(ctx);
             cache->sync(ctx, indirect_blk);
+            *modified = true;
         }
 
         cache->release(indirect_blk);
@@ -373,7 +374,7 @@ static usize inode_read(Inode *inode, u8 *dest, usize offset, usize count)
     InodeEntry *entry = &inode->entry;
 
     if (entry->type == INODE_DEVICE) {
-        return console_read(inode, (char*)dest, count);
+        return console_read(inode, (char *)dest, count);
     }
 
     if (count + offset > entry->num_bytes)
@@ -422,10 +423,11 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
                          usize count)
 {
     ASSERT(inode != NULL);
+    ASSERT(ctx != NULL);
     InodeEntry *entry = &inode->entry;
 
     if (entry->type == INODE_DEVICE) {
-        return console_write(inode, (char*)src, count);
+        return console_write(inode, (char *)src, count);
     }
 
     usize end = offset + count;
@@ -550,7 +552,7 @@ static isize inode_insert(OpContext *ctx, Inode *inode, const char *name,
 
     // Test if write succeeds
     if (inode_write(ctx, inode, (u8 *)&dir_entry, entry_offset,
-                    sizeof(DirEntry)) < sizeof(DirEntry)) {
+                    sizeof(DirEntry)) != sizeof(DirEntry)) {
         printk("(warn) inode insertion failed due to write fault\n");
         return -1;
     }
@@ -693,7 +695,7 @@ static Inode *namex(const char *path, bool nameiparent, char *name,
         }
 
         Inode *next = inode_get(next_no);
-        // This shall not fail since the inode_no has already proved to be valid
+        // This shall not fail since `inode_no` has already proved to be valid
         ASSERT(next != NULL);
 
         // Deconstruct current dir level

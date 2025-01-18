@@ -4,7 +4,9 @@
 #include <driver/base.h>
 #include <common/buf.h>
 
-#define NQUEUE 8
+// If multiple ELF are loaded simultaneously, the queue may be full and trigger a PANIC, 
+// so I doubled the size of the queue here. 
+#define NQUEUE 16
 
 #define VIRTIO_REG_MAGICVALUE (VIRTIO0 + 0x00)
 #define VIRTIO_REG_VERSION (VIRTIO0 + 0x04)

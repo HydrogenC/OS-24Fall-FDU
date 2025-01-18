@@ -26,8 +26,7 @@ extern void recycle_proc(Proc *proc);
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     /* (Final) TODO BEGIN */
-    int id = thisproc()->pid;
-    printk("execve %d begin\n", id);
+    // printk("Execve begin\n");
 
     OpContext ctx;
     bcache.begin_op(&ctx);
@@ -258,7 +257,7 @@ failure:
     _detach_from_list(&new_pgdir.section_head);
     attach_pgdir(&this->pgdir);
 
-    printk("Execve finished\n");
+    // printk("Execve finished\n");
     return 0;
     /* (Final) TODO END */
 }

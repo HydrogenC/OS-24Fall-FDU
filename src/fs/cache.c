@@ -185,7 +185,10 @@ static Block *cache_acquire(usize block_no)
         blk = (Block *)kalloc(sizeof(Block));
         init_block(blk);
         blk->block_no = block_no;
+
+        release_spinlock(&lock);
         device_read(blk);
+        acquire_spinlock(&lock);
         blk->valid = true;
         blk->acquired = true;
 
@@ -193,11 +196,11 @@ static Block *cache_acquire(usize block_no)
         _insert_into_list(&head, &blk->node);
     }
     blk->acquired = true;
-    release_spinlock(&lock);
 
     if (!acquire_sleeplock(&blk->lock)) {
         return NULL;
     }
+    release_spinlock(&lock);
 
     return blk;
 }

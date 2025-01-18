@@ -7,31 +7,36 @@
 
 char buf[512];
 
+int cat(int fd)
+{
+    int len;
+    while ((len = read(fd, buf, sizeof(buf))) > 0) {
+        write(STDOUT_FILENO, buf, len);
+    }
+
+    if (len < 0) {
+        printf("cat: failed to read file `%s`\n", fd);
+        exit(0);
+    }
+}
+
 int main(int argc, char *argv[])
 {
     /* (Final) TODO BEGIN */
     if (argc < 2) {
-        printf("cat: no file specified\n");
+        // Cat stdin
+        cat(0);
         exit(0);
     }
 
     for (int i = 1; i < argc; i++) {
         int fd = open(argv[i], 0);
         if (fd < 0) {
-            printf("cat: failed to open file `%s`\n", argv[i]);
+            printf("cat: failed to open file `%s`\n", fd);
             exit(0);
         }
 
-        int len;
-        while ((len = read(fd, buf, sizeof(buf))) > 0) {
-            write(STDOUT_FILENO, buf, len);
-        }
-
-        if (len < 0) {
-            printf("cat: failed to read file `%s`\n", argv[i]);
-            exit(0);
-        }
-
+        cat(fd);
         write(STDOUT_FILENO, "\n", 1);
         close(fd);
     }
