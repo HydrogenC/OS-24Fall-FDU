@@ -40,7 +40,7 @@ struct file *file_alloc()
 
     // Find slot and return
     for (usize i = 0; i < NFILE; i++) {
-        if (ftable.files[i].ref == 0) {
+        if (ftable.files[i].ref == 0 && ftable.files[i].type == FD_NONE) {
             ftable.files[i].ref++;
             release_spinlock(&ftable.lock);
             return &ftable.files[i];
@@ -90,12 +90,10 @@ void file_close(struct file *f)
     switch (file_type) {
     case FD_PIPE: {
         struct pipe *pipe = f->pipe;
-        release_spinlock(&ftable.lock);
-
-        // A pipe file could only be either readable or writable
+        // A pipe file could only be either readable or writable, but cannot be both
         ASSERT(f->readable ^ f->writable);
+        release_spinlock(&ftable.lock);
         pipe_close(pipe, f->writable);
-        // TODO: Close the pipe
     } break;
     case FD_INODE: {
         Inode *inode = f->ip;
@@ -152,7 +150,6 @@ isize file_read(struct file *f, char *addr, isize n)
         return bytes_read;
     } break;
     case FD_PIPE: {
-        // TODO: pipe read
         return pipe_read(f->pipe, (u64)addr, n);
     } break;
     default:
@@ -175,15 +172,29 @@ isize file_write(struct file *f, char *addr, isize n)
     switch (f->type) {
     case FD_INODE: {
         ASSERT(f->ip != NULL);
-        
-        OpContext ctx;
-        bcache.begin_op(&ctx);
-        inodes.lock(f->ip);
-        usize bytes_written = inodes.write(&ctx, f->ip, (u8 *)addr, f->off, n);
-        inodes.unlock(f->ip);
-        bcache.end_op(&ctx);
 
-        f->off += bytes_written;
+        inodes.lock(f->ip);
+        usize bytes_written = 0;
+        // If the write count is too large, we have to split it into different atomic ops
+        while (n > 0) {
+            OpContext ctx;
+            bcache.begin_op(&ctx);
+            u64 should_write = MIN(n, OP_MAX_NUM_BLOCKS * BLOCK_SIZE);
+            u64 count =
+                    inodes.write(&ctx, f->ip, (u8 *)addr, f->off, should_write);
+
+            bcache.end_op(&ctx);
+            bytes_written += count;
+            n -= count;
+            f->off += count;
+
+            if (count != should_write) {
+                printk("(warn) cannot write file, terminating\n");
+                break;
+            }
+        }
+
+        inodes.unlock(f->ip);
         return bytes_written;
     } break;
     case FD_PIPE: {

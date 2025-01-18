@@ -424,6 +424,7 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
 {
     ASSERT(inode != NULL);
     ASSERT(ctx != NULL);
+    ASSERT(count <= OP_MAX_NUM_BLOCKS * BLOCK_SIZE);
     InodeEntry *entry = &inode->entry;
 
     if (entry->type == INODE_DEVICE) {

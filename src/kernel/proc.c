@@ -223,7 +223,7 @@ NO_RETURN void exit(int code)
     this->exitcode = code;
 
     // Release files
-    for (u64 i = 0; i < 32; i++) {
+    for (u64 i = 0; i < NFILE_PROC; i++) {
         if (this->oftable.files[i]) {
             file_close(this->oftable.files[i]);
         }
@@ -369,7 +369,7 @@ int fork()
     new_proc->ucontext->x[0] = 0;
 
     // Copy oftable
-    for (u64 i = 0; i < 32; i++) {
+    for (u64 i = 0; i < NFILE_PROC; i++) {
         if (this->oftable.files[i]) {
             new_proc->oftable.files[i] = file_dup(this->oftable.files[i]);
         }

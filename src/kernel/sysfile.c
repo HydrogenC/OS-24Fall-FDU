@@ -65,7 +65,7 @@ int fdalloc(struct file *f)
 
     Proc *this = thisproc();
     acquire_spinlock(&this->oftable.lock);
-    for (usize i = 0; i < NFILE; i++) {
+    for (usize i = 0; i < NFILE_PROC; i++) {
         if (this->oftable.files[i] == NULL) {
             this->oftable.files[i] = f;
             release_spinlock(&this->oftable.lock);
@@ -473,8 +473,7 @@ Inode *create(const char *path, short type, short major, short minor,
         inodes.lock(target);
 
         // Check if type matches and if type is valid
-        if ((type == INODE_REGULAR || type == INODE_DIRECTORY) &&
-            type == target->entry.type) {
+        if (type == target->entry.type) {
             return target;
         }
 
@@ -495,6 +494,7 @@ Inode *create(const char *path, short type, short major, short minor,
     Inode *target = inodes.get(inode_index);
     inodes.lock(target);
 
+    target->entry.type = type;
     target->entry.major = major;
     target->entry.minor = minor;
     target->entry.num_links = 1;
@@ -517,6 +517,7 @@ Inode *create(const char *path, short type, short major, short minor,
             return NULL;
         }
 
+        // We do not increment ref to self again for `.` to avoid circular ref
         // Increment ref of parent due to `..`
         parent->entry.num_links++;
         inodes.sync(ctx, parent, true);
@@ -668,6 +669,8 @@ define_syscall(chdir, const char *path)
 
     // Must be directory
     if (inode->entry.type != INODE_DIRECTORY) {
+        inodes.unlock(inode);
+        inodes.put(&ctx, inode);
         bcache.end_op(&ctx);
         return -1;
     }
