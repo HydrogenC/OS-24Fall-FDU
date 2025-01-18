@@ -12,6 +12,9 @@
 #include <kernel/pt.h>
 #include <kernel/sched.h>
 
+#define ALIGN_UP(addr, size) (((usize)(addr) + (size - 1)) & (-size))
+#define ALIGN_DOWN(addr, size) (((usize)(addr)) & (-size))
+
 void init_sections(ListNode *section_head)
 {
     /* (Final) TODO BEGIN */
@@ -215,6 +218,7 @@ int pgfault_handler(u64 iss)
         }
 
         // Do a COW
+        // printk("Doing COW at %llu\n", addr);
         PTEntriesPtr pte = get_pte(pd, addr, false);
         ASSERT(pte != NULL && (*pte & 0x1));
         void *old_page_addr = (void *)P2K(PTE_ADDRESS(*pte));
@@ -289,15 +293,32 @@ int map_file(struct pgdir *pd, File *f, u64 va, usize offset, usize len,
         u64 va_offset_in_page = va_pos - va_page_base;
         u32 should_read = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_read);
 
-        u32 read_count = file_read(f, phys_page + va_offset_in_page, should_read);
-        if (read_count != should_read) {
-            // printk("(info) file shorter than given mmap size\n");
-            bytes_read += read_count;
-            break;
-        }
+        u32 read_count =
+                file_read(f, phys_page + va_offset_in_page, should_read);
 
         bytes_read += read_count;
         va_pos += read_count;
+        if (read_count != should_read) {
+            va_page_base = PAGE_BASE(va_pos);
+            va_offset_in_page = va_pos - va_page_base;
+
+            // Fill rest of this page with zero
+            if (va_pos % PAGE_SIZE != 0) {
+                u64 zero_count = ALIGN_UP(va_pos, PAGE_SIZE) - va_pos;
+                memset(phys_page + va_offset_in_page, 0, zero_count);
+                va_pos += zero_count;
+            }
+
+            ASSERT(va_pos % PAGE_SIZE == 0);
+            // Map the rest to shared zero page
+            while (va_pos < va + len) {
+                /* code */
+                vmmap(pd, va_pos, get_zero_page(), PTE_USER_DATA | PTE_RO);
+                va_pos += PAGE_SIZE;
+            }
+
+            return bytes_read;
+        }
     }
 
     return bytes_read;

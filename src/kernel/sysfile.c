@@ -378,7 +378,7 @@ define_syscall(unlinkat, int fd, const char *path, int flag)
     Inode *ip, *dp;
     DirEntry de;
     char name[FILE_NAME_MAX_LENGTH];
-    usize off;
+    usize index;
     if (!user_strlen(path, 256))
         return -1;
     OpContext ctx;
@@ -395,7 +395,7 @@ define_syscall(unlinkat, int fd, const char *path, int flag)
         strncmp(name, "..", FILE_NAME_MAX_LENGTH) == 0)
         goto bad;
 
-    usize inumber = inodes.lookup(dp, name, &off);
+    usize inumber = inodes.lookup(dp, name, &index);
     if (inumber == 0)
         goto bad;
     ip = inodes.get(inumber);
@@ -410,7 +410,8 @@ define_syscall(unlinkat, int fd, const char *path, int flag)
     }
 
     memset(&de, 0, sizeof(de));
-    if (inodes.write(&ctx, dp, (u8 *)&de, off, sizeof(de)) != sizeof(de))
+    if (inodes.write(&ctx, dp, (u8 *)&de, sizeof(de) * index, sizeof(de)) !=
+        sizeof(de))
         PANIC();
     if (ip->entry.type == INODE_DIRECTORY) {
         dp->entry.num_links--;
