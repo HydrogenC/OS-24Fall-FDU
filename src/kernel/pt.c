@@ -298,7 +298,7 @@ int load_uvm(struct pgdir *pd, u64 va, Inode *ip, usize offset, usize len)
         u64 va_page_base = PAGE_BASE(va_pos);
         u64 va_offset_in_page = va_pos - va_page_base;
         u32 read_count = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_loaded);
-        if (inodes.read(ip, new_page + va_offset_in_page, offset, read_count) !=
+        if (inodes.read(ip, (u8*)new_page + va_offset_in_page, offset, read_count) !=
             read_count) {
             printk("(warn) read failure when loading uvm\n");
             return -1;

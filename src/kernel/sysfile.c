@@ -177,26 +177,16 @@ define_syscall(munmap, void *addr, size_t length)
 {
     /* (Final) TODO BEGIN */
     Proc *this = thisproc();
-
     acquire_spinlock(&this->pgdir.lock);
-    u64 begin, end;
-    // Start to search from 0x70000000, which is between heap and stack
-    bool valid = false;
-    begin = 0x70000000;
-    end = begin + length;
 
     // Find unoccupied memory area
     struct section *mapped_section = NULL;
-    while (!valid) {
-        valid = true;
-        ListNode *node = this->pgdir.section_head.next;
-        while (node != &this->pgdir.section_head) {
-            struct section *section =
-                    container_of(node, struct section, stnode);
-            if (section->begin == (u64)addr) {
-                mapped_section = section;
-                break;
-            }
+    ListNode *node = this->pgdir.section_head.next;
+    while (node != &this->pgdir.section_head) {
+        struct section *section = container_of(node, struct section, stnode);
+        if (section->begin == (u64)addr) {
+            mapped_section = section;
+            break;
         }
     }
 
@@ -213,7 +203,8 @@ define_syscall(munmap, void *addr, size_t length)
     }
 
     // Only write back public mappings
-    if (mapped_section->flags == ST_MMAP_SHARED && (mapped_section->prot & PROT_WRITE)) {
+    if (mapped_section->flags == ST_MMAP_SHARED &&
+        (mapped_section->prot & PROT_WRITE)) {
         write_back(&this->pgdir, mapped_section->fp, mapped_section->begin,
                    mapped_section->offset, length);
     }
@@ -221,7 +212,7 @@ define_syscall(munmap, void *addr, size_t length)
     u64 va = ALIGN_DOWN(mapped_section->begin, PAGE_SIZE);
     if (free_whole_section) {
         while (va < mapped_section->end) {
-            PTEntriesPtr pte = *get_pte(&this->pgdir, va, false);
+            PTEntriesPtr pte = get_pte(&this->pgdir, va, false);
             if (!pte) {
                 continue;
             }
@@ -231,15 +222,15 @@ define_syscall(munmap, void *addr, size_t length)
                 kfree_page(old_page);
             }
 
-            *pte = NULL;
+            *pte = 0;
         }
 
-        _detach_from_list(mapped_section);
+        _detach_from_list(&mapped_section->stnode);
         file_close(mapped_section->fp);
         kfree(mapped_section);
     } else {
         while (va + PAGE_SIZE <= mapped_section->begin + length) {
-            PTEntriesPtr pte = *get_pte(&this->pgdir, va, false);
+            PTEntriesPtr pte = get_pte(&this->pgdir, va, false);
             if (!pte) {
                 continue;
             }
@@ -249,7 +240,7 @@ define_syscall(munmap, void *addr, size_t length)
                 kfree_page(old_page);
             }
 
-            *pte = NULL;
+            *pte = 0;
         }
 
         mapped_section->begin += length;
@@ -620,7 +611,7 @@ define_syscall(mkdirat, int dirfd, const char *path, int mode)
     return 0;
 }
 
-define_syscall(mknodat, int dirfd, const char *path, mode_t mode, dev_t dev)
+define_syscall(mknodat, int dirfd, const char *path, __attribute__((unused)) mode_t mode, dev_t dev)
 {
     Inode *ip;
     if (!user_strlen(path, 256))
@@ -684,7 +675,7 @@ define_syscall(chdir, const char *path)
     /* (Final) TODO END */
 }
 
-define_syscall(pipe2, int pipefd[2], int flags)
+define_syscall(pipe2, int pipefd[2], __attribute__((unused)) int flags)
 {
     /* (Final) TODO BEGIN */
     File *f0, *f1;

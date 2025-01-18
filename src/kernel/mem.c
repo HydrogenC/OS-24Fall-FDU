@@ -12,7 +12,8 @@
 #define ALIGN_DOWN_PTR(addr, size) (void *)(((usize)(addr)) & (-size))
 
 #define MIN_SIZE 8
-#define PAGE_COUNT ((PHYSTOP - EXTMEM) / PAGE_SIZE)
+// An estimated number of page count, larger than the actual page count
+#define TOTAL_PAGE_COUNT ((PHYSTOP - EXTMEM) / PAGE_SIZE)
 #define PAGE_INDEX(ptr) (((u64)K2P(ptr) - EXTMEM) / PAGE_SIZE)
 
 RefCount kalloc_page_cnt;
@@ -22,7 +23,7 @@ static int total_page_cnt = 0;
 extern char end[];
 static void *zero_page = NULL;
 
-static struct page pages[PAGE_COUNT];
+static struct page pages[TOTAL_PAGE_COUNT];
 
 // Block sizes, in bytes
 const int block_sizes[] = { 8, 16, 32, 64, 128, 256, 512, 1024, 2048 };
@@ -62,7 +63,7 @@ void init_pages()
         total_page_cnt++;
     }
 
-    printk("Page start addr: %llu, registered pages: %d\n", end, total_page_cnt);
+    printk("Page start addr: %llu, registered pages: %d\n", (u64)end, total_page_cnt);
 }
 
 void kinit()
@@ -256,7 +257,7 @@ void *kalloc(usize size)
 {
     if (size == 0) {
         // Cannot allocate zero size
-        printk("(warn) allocating zero size. \n", size);
+        printk("(warn) allocating zero size. \n");
         return NULL;
     }
 
