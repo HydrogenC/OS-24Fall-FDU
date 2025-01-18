@@ -437,13 +437,12 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
     ASSERT(offset <= end);
 
     // TODO
+    bool inode_needs_sync = false;
     usize pos = offset;
     while (pos < end) {
         bool modified;
         u32 data_blk_no = inode_map(ctx, inode, pos, &modified);
-        if (modified) {
-            inode_sync(ctx, inode, true);
-        }
+        inode_needs_sync = inode_needs_sync || modified;
 
         // Cannot read current data block
         if (data_blk_no == 0) {
@@ -469,6 +468,10 @@ static usize inode_write(OpContext *ctx, Inode *inode, u8 *src, usize offset,
     // If appended, modify size
     if (pos > inode->entry.num_bytes) {
         inode->entry.num_bytes = pos;
+        inode_needs_sync = true;
+    }
+
+    if (inode_needs_sync) {
         inode_sync(ctx, inode, true);
     }
 

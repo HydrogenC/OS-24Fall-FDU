@@ -102,7 +102,7 @@ define_syscall(mmap, void *addr, int length, int prot, int flags, int fd,
     }
 
     // Check permission
-    if ((flags & PROT_WRITE) && flags != MAP_PRIVATE && !f->writable) {
+    if ((prot & PROT_WRITE) && flags != MAP_PRIVATE && !f->writable) {
         printk("(warn) mmap: creating shared writable mmap but file isn't writable! \n");
         return -1;
     }
@@ -130,6 +130,8 @@ define_syscall(mmap, void *addr, int length, int prot, int flags, int fd,
                     valid = false;
                     break;
                 }
+
+                node = node->next;
             }
         }
 
@@ -154,6 +156,7 @@ define_syscall(mmap, void *addr, int length, int prot, int flags, int fd,
         }
     }
 
+    printk("Mapping file to %llu - %llu\n", begin, end);
     struct section *map_section =
             (struct section *)kalloc(sizeof(struct section));
 
@@ -188,6 +191,8 @@ define_syscall(munmap, void *addr, size_t length)
             mapped_section = section;
             break;
         }
+
+        node = node->next;
     }
 
     if (!mapped_section || !mapped_section->fp) {
@@ -223,6 +228,7 @@ define_syscall(munmap, void *addr, size_t length)
             }
 
             *pte = 0;
+            va += PAGE_SIZE;
         }
 
         _detach_from_list(&mapped_section->stnode);
@@ -241,6 +247,7 @@ define_syscall(munmap, void *addr, size_t length)
             }
 
             *pte = 0;
+            va += PAGE_SIZE;
         }
 
         mapped_section->begin += length;
@@ -611,7 +618,8 @@ define_syscall(mkdirat, int dirfd, const char *path, int mode)
     return 0;
 }
 
-define_syscall(mknodat, int dirfd, const char *path, __attribute__((unused)) mode_t mode, dev_t dev)
+define_syscall(mknodat, int dirfd, const char *path,
+               __attribute__((unused)) mode_t mode, dev_t dev)
 {
     Inode *ip;
     if (!user_strlen(path, 256))

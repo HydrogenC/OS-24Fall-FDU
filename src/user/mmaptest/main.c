@@ -120,6 +120,7 @@ void mmap_test(void)
     if (p == MAP_FAILED)
         err("mmap (1)");
     _v1(p);
+    printf("test mmap f: check success\n");
     if (munmap(p, PGSIZE * 2) == -1)
         err("munmap (1)");
 
@@ -266,6 +267,9 @@ void fork_test(void)
     if ((fd = open(f, O_RDONLY)) == -1)
         err("open");
     unlink(f);
+
+    printf("fork_test mmap start\n");
+
     char *p1 = mmap(0, PGSIZE * 2, PROT_READ, MAP_SHARED, fd, 0);
     if (p1 == MAP_FAILED)
         err("mmap (4)");

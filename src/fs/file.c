@@ -175,11 +175,15 @@ isize file_write(struct file *f, char *addr, isize n)
 
         inodes.lock(f->ip);
         usize bytes_written = 0;
-        // If the write count is too large, we have to split it into different atomic ops
+        // If the write count is too large, we have to split it into multiple atomic ops
         while (n > 0) {
             OpContext ctx;
             bcache.begin_op(&ctx);
-            u64 should_write = MIN(n, OP_MAX_NUM_BLOCKS * BLOCK_SIZE);
+            // A write to data block would take up to 2 syncs, updating the inode itself costs one sync,
+            // and writing `n * BLOCK_SIZE` of data would take up to `n + 1` data block writes,
+            // so the maximum number of blocks safe to submit within one `OpContext` is given as followed
+            u64 should_write =
+                    MIN(n, ((OP_MAX_NUM_BLOCKS - 1) / 2 - 1) * BLOCK_SIZE);
             u64 count =
                     inodes.write(&ctx, f->ip, (u8 *)addr, f->off, should_write);
 

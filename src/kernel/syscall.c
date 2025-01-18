@@ -34,8 +34,13 @@ void syscall_entry(UserContext *context)
 
     // Get pointer to function
     u64 (*func)(u64, u64, u64, u64, u64, u64) = syscall_table[id];
-    u64 ret = func(context->x[0], context->x[1], context->x[2], context->x[3],
+    u64 ret = -1;
+    if (!func) {
+        printk("(warn) invalid syscall id %llu\n", id);
+    } else {
+        ret = func(context->x[0], context->x[1], context->x[2], context->x[3],
                    context->x[4], context->x[5]);
+    }
 
     // Store return value in x0
     context->x[0] = ret;

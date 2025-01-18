@@ -27,9 +27,11 @@ void free_sections(struct pgdir *pd)
     while (node != &pd->section_head) {
         struct section *section = container_of(node, struct section, stnode);
         ListNode *next = node->next;
-        
-        if(section->flags == ST_MMAP_SHARED && (section->prot & 2 /* PROT_WRITE */)){
-            write_back(pd, section->fp, section->begin, section->offset, section->length);
+
+        if (section->flags == ST_MMAP_SHARED &&
+            (section->prot & 2 /* PROT_WRITE */)) {
+            write_back(pd, section->fp, section->begin, section->offset,
+                       section->length);
         }
 
         if (section->fp) {
@@ -185,6 +187,7 @@ int pgfault_handler(u64 iss)
                 } else if (containing_section->flags == ST_MMAP_PRIVATE) {
                     flags |= PTE_RO;
                 }
+
                 map_file(pd, containing_section->fp, containing_section->begin,
                          containing_section->offset, containing_section->length,
                          flags);
@@ -193,7 +196,7 @@ int pgfault_handler(u64 iss)
             release_spinlock(&p->pgdir.lock);
             return 0;
         } else {
-            printk("(warn) Translation error not resolvable.\n");
+            printk("(warn) translation error not resolvable.\n");
             release_spinlock(&p->pgdir.lock);
             return -1;
         }
@@ -271,22 +274,30 @@ int map_file(struct pgdir *pd, File *f, u64 va, usize offset, usize len,
     f->off = offset;
 
     while (bytes_read < len) {
-        char *new_page = kalloc_page();
-        memset(new_page, 0, PAGE_SIZE);
-
         u64 va_page_base = PAGE_BASE(va_pos);
-        u64 va_offset_in_page = va_pos - va_page_base;
-        u32 write_count = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_read);
+        PTEntriesPtr pte = get_pte(pd, va_page_base, false);
 
-        if (file_read(f, new_page + va_offset_in_page, write_count) !=
-            write_count) {
-            printk("(warn) read failure when reading file to memory\n");
-            return -1;
+        char *phys_page = NULL;
+        if (!pte || !CHECK_DESCRIPTOR(*pte)) {
+            phys_page = kalloc_page();
+            memset(phys_page, 0, PAGE_SIZE);
+            vmmap(pd, va_page_base, phys_page, flags);
+        } else {
+            phys_page = (char *)P2K(PTE_ADDRESS(*pte));
         }
-        vmmap(pd, va_page_base, new_page, flags);
 
-        bytes_read += write_count;
-        va_pos += write_count;
+        u64 va_offset_in_page = va_pos - va_page_base;
+        u32 should_read = MIN(PAGE_SIZE - va_offset_in_page, len - bytes_read);
+
+        u32 read_count = file_read(f, phys_page + va_offset_in_page, should_read);
+        if (read_count != should_read) {
+            // printk("(info) file shorter than given mmap size\n");
+            bytes_read += read_count;
+            break;
+        }
+
+        bytes_read += read_count;
+        va_pos += read_count;
     }
 
     return bytes_read;
@@ -299,15 +310,13 @@ int write_back(struct pgdir *pd, File *f, u64 va, usize offset, usize len)
     f->off = offset;
 
     while (bytes_written < len) {
-        char *new_page = kalloc_page();
-        memset(new_page, 0, PAGE_SIZE);
-
         u64 va_page_base = PAGE_BASE(va_pos);
         PTEntriesPtr pte = get_pte(pd, va_page_base, false);
 
         if (!pte || !CHECK_DESCRIPTOR(*pte)) {
-            printk("(warn) invalid page encountered while writing back\n");
-            return -1;
+            // Pages aren't created yet, so there's no modifications, we can safely return
+            // printk("(info) pages unmodified, no need to write back\n");
+            return 0;
         }
 
         char *phys_addr = (char *)P2K(PTE_ADDRESS(*pte));
