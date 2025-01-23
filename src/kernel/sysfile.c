@@ -588,7 +588,7 @@ define_syscall(openat, int dirfd, const char *path, int omode)
 
     f->type = FD_INODE;
     f->ip = ip;
-    f->off = 0;
+    f->off = (omode & O_APPEND) ? ip->entry.num_bytes : 0;
     f->readable = !(omode & O_WRONLY);
     f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
     return fd;

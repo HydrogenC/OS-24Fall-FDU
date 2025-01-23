@@ -13,8 +13,11 @@
 #define PIPE 3
 #define LIST 4
 #define BACK 5
+#define HEREDOC 6
 
 #define MAXARGS 10
+#define MAXDELIM 10
+#define HEREDOCTEMP "heredoctmp"
 
 struct cmd {
     int type;
@@ -32,6 +35,15 @@ struct redircmd {
     char *file;
     char *efile;
     int mode;
+    int fd;
+};
+
+struct heredoccmd {
+    int type;
+    struct cmd *cmd;
+    char *delim;
+    char *edelim;
+    char *file;
     int fd;
 };
 
@@ -83,6 +95,7 @@ void runcmd(struct cmd *cmd)
     struct listcmd *lcmd;
     struct pipecmd *pcmd;
     struct redircmd *rcmd;
+    struct heredoccmd *hcmd;
 
     if (cmd == 0)
         exit(0);
@@ -146,6 +159,47 @@ void runcmd(struct cmd *cmd)
         if (fork1() == 0)
             runcmd(bcmd->cmd);
         break;
+
+    case HEREDOC:
+        hcmd = (struct heredoccmd *)cmd;
+        {
+            char buf[100];
+            int tempfd = open(HEREDOCTEMP, O_WRONLY | O_CREAT);
+            int delimlen = strlen(hcmd->delim);
+            while (1) {
+                if (!fgets(buf, sizeof(buf), stdin)) {
+                    // Quit on Ctrl+D
+                    break;
+                }
+
+                // Remove new line character in string compare
+                int len = strlen(buf);
+                int trimmed = 0;
+                if (buf[len - 1] == '\n') {
+                    buf[len - 1] = 0;
+                    trimmed = 1;
+                }
+
+                if (strcmp(buf, hcmd->delim) == 0) {
+                    break;
+                }
+
+                // Restore string
+                if (trimmed) {
+                    buf[len - 1] = '\n';
+                }
+
+                write(tempfd, buf, strlen(buf));
+            }
+            close(tempfd);
+        }
+        close(0);
+        if (open(HEREDOCTEMP, 0) < 0) {
+            fprintf(stderr, "open heredoc temp file failed\n", rcmd->file);
+            exit(1);
+        }
+        runcmd(hcmd->cmd);
+        break;
     }
     exit(0);
 }
@@ -195,6 +249,7 @@ int main(int argc, char *argv[])
         if (fork1() == 0)
             runcmd(parsecmd(buf));
         wait(NULL);
+        unlink(HEREDOCTEMP);
     }
 }
 
@@ -271,6 +326,19 @@ struct cmd *backcmd(struct cmd *subcmd)
     return (struct cmd *)cmd;
 }
 
+struct cmd *heredoccmd(struct cmd *subcmd, char *delim, char *edelim)
+{
+    struct heredoccmd *cmd;
+    cmd = malloc1(sizeof(*cmd));
+    memset(cmd, 0, sizeof(*cmd));
+
+    cmd->type = HEREDOC;
+    cmd->cmd = subcmd;
+    cmd->delim = delim;
+    cmd->edelim = edelim;
+    return (struct cmd *)cmd;
+}
+
 // Parsing
 
 char whitespace[] = " \t\r\n\v";
@@ -297,6 +365,10 @@ int gettoken(char **ps, char *es, char **q, char **eq)
     case '&':
     case '<':
         s++;
+        if (*s == '<') {
+            ret = '-';
+            s++;
+        }
         break;
     case '>':
         s++;
@@ -397,7 +469,10 @@ struct cmd *parseredirs(struct cmd *cmd, char **ps, char *es)
             cmd = redircmd(cmd, q, eq, O_WRONLY | O_CREAT, 1);
             break;
         case '+': // >>
-            cmd = redircmd(cmd, q, eq, O_WRONLY | O_CREAT, 1);
+            cmd = redircmd(cmd, q, eq, O_WRONLY | O_APPEND, 1);
+            break;
+        case '-': // <<
+            cmd = heredoccmd(cmd, q, eq);
             break;
         }
     }
@@ -460,6 +535,7 @@ struct cmd *nulterminate(struct cmd *cmd)
     struct listcmd *lcmd;
     struct pipecmd *pcmd;
     struct redircmd *rcmd;
+    struct heredoccmd *hcmd;
 
     if (cmd == 0)
         return 0;
@@ -492,6 +568,12 @@ struct cmd *nulterminate(struct cmd *cmd)
     case BACK:
         bcmd = (struct backcmd *)cmd;
         nulterminate(bcmd->cmd);
+        break;
+
+    case HEREDOC:
+        hcmd = (struct heredoccmd *)cmd;
+        nulterminate(hcmd->cmd);
+        *hcmd->edelim = 0;
         break;
     }
     return cmd;

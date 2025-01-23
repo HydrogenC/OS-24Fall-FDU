@@ -127,7 +127,7 @@ void kfree_page(void *p)
 
     // Zero page shouldn't have been cleaned
     ASSERT(p != zero_page);
-    // printk("Freeing page %u\n", page_index);
+    // printk("Freeing page %llu\n", page_index);
 
     page_header *p_page = p;
     if (free_list) {
