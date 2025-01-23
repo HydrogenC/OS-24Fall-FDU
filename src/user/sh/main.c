@@ -43,8 +43,6 @@ struct heredoccmd {
     struct cmd *cmd;
     char *delim;
     char *edelim;
-    char *file;
-    int fd;
 };
 
 struct pipecmd {
